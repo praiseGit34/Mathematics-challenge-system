@@ -2,6 +2,9 @@ package Client;
 
 import java.io.*;
 import java.net.*;
+import java.nio.file.Files;
+import java.util.Arrays;
+import java.util.Base64;
 import java.util.Scanner;
 
 public class Client {
@@ -71,7 +74,9 @@ public class Client {
                 if (partcommand.length != 8) {
                     System.out.println("Invalid registration format. Use: Register username firstname lastname emailAddress date_of_birth school_registration_number image_file.png");
                 } else {
-                    register(partcommand);
+                    String[] registerArgs = Arrays.copyOfRange(partcommand, 1, partcommand.length);
+                    register(registerArgs);
+                   
                 }
                 break;
             case "login":
@@ -132,8 +137,27 @@ public class Client {
         System.out.println(response);
     }
 
-    private void register(String[] args) throws IOException {
-        String message = String.join(" ", args);
+   private void register(String[] args) throws IOException {
+        String username = args[0];
+        String firstname = args[1];
+        String lastname = args[2];
+        String emailAddress = args[3];
+        String dateOfBirth = args[4];
+        String schoolRegistrationNumber = args[5];
+        String imageFileName = args[6];
+
+        // File imageFile = new File(imageFileName);
+        // if (!imageFile.exists()) {
+        //     System.out.println("Image file not found.");
+        //     return;
+        // }
+
+        // // Read image file bytes
+        // byte[] imageBytes = Files.readAllBytes(imageFile.toPath());
+        // String imageData = Base64.getEncoder().encodeToString(imageBytes);
+
+        // Construct the registration message
+        String message = String.join(" ", args) ;
         String response = sendMessage("REGISTER " + message);
         System.out.println(response);
     }
