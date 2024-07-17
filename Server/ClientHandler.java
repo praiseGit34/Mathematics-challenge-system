@@ -6,6 +6,8 @@ import java.sql.*;
 import java.text.*;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -309,9 +311,22 @@ public class ClientHandler extends Thread {
                 }
             }
         }
-        private List<Map<String, Object>> fetchRandomQuestions(int challengeNo) {
-            // TODO Auto-generated method stub
-            throw new UnsupportedOperationException("Unimplemented method 'fetchRandomQuestions'");
+         private List<Map<String, Object>> fetchRandomQuestions(int challengeNo) throws SQLException {
+            String questionSql = "SELECT q.questionNo, q.question, a.answer, a.marksAwarded FROM Question q JOIN Answer a ON q.questionNo = a.questionNo WHERE q.questionBankID = (SELECT questionBankID FROM Challenge WHERE challengeNo = ?) ORDER BY RAND() LIMIT 10";
+            List<Map<String, Object>> questions = new ArrayList<>();
+            try (PreparedStatement questionStmt = con.prepareStatement(questionSql)) {
+                questionStmt.setInt(1, challengeNo);
+                ResultSet questionRs = questionStmt.executeQuery();
+                while (questionRs.next()) {
+                    Map<String, Object> question = new HashMap<>();
+                    question.put("questionNo", questionRs.getInt("questionNo"));
+                    question.put("question", questionRs.getString("question"));
+                    question.put("answer", questionRs.getString("answer"));
+                    question.put("marks", questionRs.getInt("marksAwarded"));
+                    questions.add(question);
+                }
+            }
+            return questions;
         }
         private boolean hasExceededAttempts(int challengeNo) {
             // TODO Auto-generated method stub
