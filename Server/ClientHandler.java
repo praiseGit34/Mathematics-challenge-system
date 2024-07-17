@@ -97,28 +97,19 @@ public class ClientHandler implements Runnable {
         }
     }
 
-    private String generateSchoolRepresentativePassword(String email) {
-        try {
-            String checkEmailSql = "SELECT * FROM School WHERE emailAddress = ?";
-            try (PreparedStatement checkEmailStmt = con.prepareStatement(checkEmailSql)) {
-                checkEmailStmt.setString(1, email);
-                ResultSet emailRs = checkEmailStmt.executeQuery();
-                if (!emailRs.next()) {
-                    return "Error: Invalid email address.";
-                }
-            }
-
-            String password = String.format("%05d", new Random().nextInt(100000));
-            this.currentSchoolRepEmail = email;
-            this.currentSchoolRepPassword = password;
-
-            return "A new password has been generated and sent to your email: " + password + 
-                   "\nPlease use this password to log in.";
-        } catch (SQLException e) {
-            e.printStackTrace();
-            return "Error generating password: " + e.getMessage();
-        }
+    private String generateSchoolRepresentativePassword(String emailAddress) throws SQLException {
+        String password = String.format("%05d", new Random().nextInt(100000));
+        this.currentSchoolRepEmail = emailAddress;
+        this.currentSchoolRepPassword = password;
+   
+        // Send email with the new password
+        String subject = "Your New Password for School Representative Account";
+        String body = "Your new password is: " + password + "\nPlease use this password to log in.";
+        sendEmail(emailAddress, subject, body);
+   
+        return "A new password has been generated and sent to your email: " + emailAddress;
     }
+
 
     private String registerUser(String[] parts) throws SQLException {
         System.out.println("Received registration request. Parts: " + Arrays.toString(parts));
@@ -173,7 +164,9 @@ public class ClientHandler implements Runnable {
             int affectedRows = pstmt.executeUpdate();
             if (affectedRows > 0) {
                 System.out.println("User registered successfully");
+                sendParticipantEmail(email,username);
                 return "User registered successfully. Your password is: " + password;
+               
             } else {
                 System.out.println("Failed to register user");
                 return "Failed to register user";
@@ -184,6 +177,38 @@ public class ClientHandler implements Runnable {
             return "Error registering user: " + e.getMessage();
         }
     }
+
+    private void sendParticipantEmail(String email,String username) {
+        String host = "smtp.gmail.com";
+        String from = "praiseasiimire38@gmail.com";
+        String password = "tylw lnxj cpro oiki";  // Use the App Password generated earlier
+    
+        Properties properties = new Properties();
+        properties.put("mail.smtp.host", host);
+        properties.put("mail.smtp.port", "587");
+        properties.put("mail.smtp.auth", "true");
+        properties.put("mail.smtp.starttls.enable", "true");
+    
+        Session session = Session.getInstance(properties, new javax.mail.Authenticator() {
+            protected PasswordAuthentication getPasswordAuthentication() {
+                return new PasswordAuthentication(from, password);
+            }
+        });
+    
+        try {
+            Message message = new MimeMessage(session);
+            message.setFrom(new InternetAddress(from));
+            message.setRecipients(Message.RecipientType.TO, InternetAddress.parse(email));
+            message.setSubject("Dear participant");
+            message.setText("hope this email finds you well\n congs you have been registered");
+    
+            Transport.send(message);
+            System.out.println("Email sent successfully to " + email);
+        } catch (MessagingException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
     private String generateRandomPassword() {
         return String.format("%06d", new Random().nextInt(1000000));
     }
@@ -588,8 +613,8 @@ public class ClientHandler implements Runnable {
 
                 con.commit();
 
-                // Send email notification (implement this method separately)
-                sendEmailNotification(rs.getString("emailAddress"), isApproved);
+                // // Send email notification (implement this method separately)
+                // sendEmailNotification(rs.getString("emailAddress"), isApproved);
 
                 return "Applicant " + username + " has been " + (isApproved ? "accepted" : "rejected") + ".";
             }
@@ -609,52 +634,36 @@ public class ClientHandler implements Runnable {
             }
         }
     }
-
-    private void sendEmailNotification(String recipient, String subject,String body) {
-       
-    // Email configuration
-    String host = "smtp.gmail.com";  // Or your SMTP server
-    String from = "praiseasiimire38email@gmail.com";  // Your email address
-    String password = "xoyn gpbx udrz espd";  // Your email password
-
-    // Setup mail server properties
-    Properties properties = System.getProperties();
-    properties.put("mail.smtp.host", host);
-    properties.put("mail.smtp.port", "465");
-    properties.put("mail.smtp.ssl.enable", "true");
-    properties.put("mail.smtp.auth", "true");
-
-    // Get the Session object
-    Session session = Session.getInstance(properties, new javax.mail.Authenticator() {
-        protected PasswordAuthentication getPasswordAuthentication() {
-            return new PasswordAuthentication(from, password);
+    private void sendEmail(String emailAddress, String subject, String body) {
+        String host = "smtp.gmail.com";
+        String from = "praiseasiimire38@gmail.com";
+        String password = "tylw lnxj cpro oiki";  // Use the App Password generated earlier
+    
+        Properties properties = new Properties();
+        properties.put("mail.smtp.host", host);
+        properties.put("mail.smtp.port", "587");
+        properties.put("mail.smtp.auth", "true");
+        properties.put("mail.smtp.starttls.enable", "true");
+    
+        Session session = Session.getInstance(properties, new javax.mail.Authenticator() {
+            protected PasswordAuthentication getPasswordAuthentication() {
+                return new PasswordAuthentication(from, password);
+            }
+        });
+    
+        try {
+            Message message = new MimeMessage(session);
+            message.setFrom(new InternetAddress(from));
+            message.setRecipients(Message.RecipientType.TO, InternetAddress.parse(emailAddress));
+            message.setSubject("Dear schoolRepresentative");
+            message.setText("hope this email finds you well\n kindly confrim this participant who registered under your school");
+    
+            Transport.send(message);
+            System.out.println("Email sent successfully to " + emailAddress);
+        } catch (MessagingException e) {
+            throw new RuntimeException(e);
         }
-    });
-
-    try {
-        // Create a default MimeMessage object
-        MimeMessage message = new MimeMessage(session);
-
-        // Set From: header field
-        message.setFrom(new InternetAddress(from));
-
-        // Set To: header field
-        message.addRecipient(Message.RecipientType.TO, new InternetAddress(recipient));
-
-        // Set Subject: header field
-        message.setSubject(subject);
-
-        // Set the actual message
-        message.setText(body);
-
-        // Send message
-        Transport.send(message);
-        System.out.println("Email sent successfully to " + recipient);
-    } catch (MessagingException mex) {
-        mex.printStackTrace();
     }
-}
-
     private String viewApplicants() {
         if (!isSchoolRepresentative) {
             return "You don't have permission to view applicants.";
