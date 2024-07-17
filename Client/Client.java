@@ -2,9 +2,7 @@ package Client;
 
 import java.io.*;
 import java.net.*;
-import java.nio.file.Files;
 import java.util.Arrays;
-import java.util.Base64;
 import java.util.Scanner;
 
 public class Client {
