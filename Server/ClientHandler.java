@@ -1,7 +1,7 @@
 package Server;
 
-import java.net.Socket;
-import java.sql.Connection;
+import java.net.*;
+import java.sql.*;
 
 public class ClientHandler extends Thread {
 
