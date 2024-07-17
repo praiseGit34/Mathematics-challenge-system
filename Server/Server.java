@@ -1,23 +1,23 @@
 package Server;
 
-import java.io.IOException;
+import java.io.*;
 import java.net.*;
 import java.sql.*;
 
 public class Server {
     private final ServerSocket serverSocket;
-    private final Connection dbConnection;
+    private final Connection con;
 
     public Server(int port) throws IOException, SQLException {
         serverSocket = new ServerSocket(port);
-        dbConnection = DriverManager.getConnection("jdbc:mysql://localhost:3306/mathcompetition", "root", "root");
+        con = DriverManager.getConnection("jdbc:mysql://localhost:3306/mathematics", "root", "root");
     }
     
 
     public void start() {
         while (true) {
             try {
-                new ClientHandler(serverSocket.accept(), dbConnection).start();
+                new ClientHandler(serverSocket.accept(), con).start();
             } catch (IOException e) {
                 e.printStackTrace();
             }
