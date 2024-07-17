@@ -137,7 +137,12 @@ public class Client {
         System.out.println(response);
     }
 
-   private void register(String[] args) throws IOException {
+    private void register(String[] args) throws IOException {
+        if (args.length != 7) {
+            System.out.println("Invalid number of arguments for registration.");
+            return;
+        }
+    
         String username = args[0];
         String firstname = args[1];
         String lastname = args[2];
@@ -145,21 +150,12 @@ public class Client {
         String dateOfBirth = args[4];
         String schoolRegistrationNumber = args[5];
         String imageFileName = args[6];
-
-        // File imageFile = new File(imageFileName);
-        // if (!imageFile.exists()) {
-        //     System.out.println("Image file not found.");
-        //     return;
-        // }
-
-        // // Read image file bytes
-        // byte[] imageBytes = Files.readAllBytes(imageFile.toPath());
-        // String imageData = Base64.getEncoder().encodeToString(imageBytes);
-
+    
         // Construct the registration message
-        String message = String.join(" ", args) ;
+        String message = String.join(" ", args);
+        System.out.println("Sending registration message: " + message);
         String response = sendMessage("REGISTER " + message);
-        System.out.println(response);
+        System.out.println("Server response: " + response);
     }
 
     private void viewChallenges() throws IOException {
