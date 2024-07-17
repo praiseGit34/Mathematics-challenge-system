@@ -155,10 +155,23 @@ public class ClientHandler extends Thread {
         }
         
         //log in method
-        private String loginUser(String string, String string2) {
-            // TODO Auto-generated method stub
-            throw new UnsupportedOperationException("Unimplemented method 'loginUser'");
-        }
+        private  String loginUser(String username, String password) {
+            try {
+                String query = "SELECT * FROM users WHERE userName = ? AND password = ?";
+                PreparedStatement stmt = con.prepareStatement(query);
+                stmt.setString(1, username);
+                stmt.setString(2, password);
+                ResultSet rs = stmt.executeQuery();
+                if (rs.next()) {
+                    return "Login successful for user: " + username;
+                } else {
+                    return "Invalid username or password.";
+                }
+            } catch (SQLException e) {
+                e.printStackTrace();
+                return "Error during login.";
+            }
+         }  
         private String logoutUser() {
             if (isAuthenticated()) {
                 participantID = 0;
