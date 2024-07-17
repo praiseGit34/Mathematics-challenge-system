@@ -42,13 +42,19 @@ public class ClientHandler extends Thread {
     }
 }
     private void closeResources() {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'closeResources'");
+        try {
+            if (in != null) in.close();
+            if (out != null) out.close();
+            if (soc != null) soc.close();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
     }
 
-    private void clearInputBuffer() {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'clearInputBuffer'");
+    private void clearInputBuffer() throws IOException {
+        while (in.ready()) {
+            in.readLine();
+        }
     }
 
     private String processRequest(String inputLine) {
