@@ -1,13 +1,9 @@
 package Server;
 
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStreamReader;
-import java.io.PrintWriter;
+import java.io.*;
 import java.net.*;
 import java.sql.*;
-import java.text.ParseException;
-import java.text.SimpleDateFormat;
+import java.text.*;
 
 public class ClientHandler extends Thread {
     private final Socket soc;
@@ -92,9 +88,9 @@ public class ClientHandler extends Thread {
         }
     }
 
-//method for handling the registration command
-    private String registerUser(String[] parts) {
-            if (parts.length != 9) {
+    //method for handling the registration command
+    private String registerUser(String[] parts) throws SQLException {
+            if (parts.length != 8) {
                 return "Invalid registration format";
             }
             String username = parts[2];
@@ -113,7 +109,9 @@ public class ClientHandler extends Thread {
             if (isRejectedApplicant(email, school_registration_number)) {
                 return "You have been previously rejected and cannot register under this school.";
             }
-            
+            if (checkUserExists(username, email)) {
+                return "User with this username or email already exists.";
+            }
             String password = generateRandomPassword();
             String sql = "INSERT INTO Applicant (schoolRegNo, emailAddress, userName, imagePath, firstName, lastName, password, dateOfBirth) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
             try (PreparedStatement pstmt = con.prepareStatement(sql)) {
@@ -140,6 +138,52 @@ public class ClientHandler extends Thread {
                 return "Error registering user: " + e.getMessage();
             }
         }
+        //checks if the user name already exists
+        private boolean checkUserExists(String username, String email) throws SQLException {
+            String query = "SELECT COUNT(*) AS count FROM users WHERE username = ? OR emailAddress = ?";
+            try (PreparedStatement pstmt = con.prepareStatement(query)) {
+                pstmt.setString(1, username);
+                pstmt.setString(2, email);
+        
+                ResultSet rs = pstmt.executeQuery();
+                if (rs.next()) {
+                    int count = rs.getInt("count");
+                    return count > 0;
+                }
+            }
+            return false;
+        }
+        
+        //log in method
+        private String loginUser(String string, String string2) {
+            // TODO Auto-generated method stub
+            throw new UnsupportedOperationException("Unimplemented method 'loginUser'");
+        }
+        private String logoutUser() {
+            if (isAuthenticated()) {
+                participantID = 0;
+                isSchoolRepresentative = false;
+                school_registration_number = 0;
+                currentSchoolRepEmail = null;
+                currentSchoolRepPassword = null;
+                return "Logged out successfully.";
+            } else {
+                return "No user is currently logged in.";
+            }
+        }
+
+        private boolean isAuthenticated() {
+            return participantID != 0 || (isSchoolRepresentative && school_registration_number != 0);
+        }
+
+    private boolean isRejectedApplicant(String email, int school_registration_number) {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'isRejectedApplicant'");
+    }
+    private String generateRandomPassword() {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'generateRandomPassword'");
+    }
     public void start() {
         // TODO Auto-generated method stub
         throw new UnsupportedOperationException("Unimplemented method 'start'");
