@@ -4,6 +4,10 @@ import java.io.*;
 import java.net.*;
 import java.sql.*;
 import java.text.*;
+import java.time.LocalTime;
+import java.time.format.DateTimeFormatter;
+import java.util.List;
+import java.util.Map;
 
 public class ClientHandler extends Thread {
     private final Socket soc;
@@ -88,6 +92,7 @@ public class ClientHandler extends Thread {
         }
     }
 
+    
     //method for handling the registration command
     private String registerUser(String[] parts) throws SQLException {
             if (parts.length != 8) {
@@ -189,17 +194,248 @@ public class ClientHandler extends Thread {
             return participantID != 0 || (isSchoolRepresentative && school_registration_number != 0);
         }
 
-    private boolean isRejectedApplicant(String email, int school_registration_number) {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'isRejectedApplicant'");
-    }
-    private String generateRandomPassword() {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'generateRandomPassword'");
-    }
-    public void start() {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'start'");
-    }
+        //handling the view challenges command
+        private String viewChallenges() {
+            if (!isAuthenticated()) {
+                return "You must be logged in to view challenges.";
+            }
+            String sql = "SELECT * FROM Challenge ORDER BY challengeNo";
+            StringBuilder result = new StringBuilder();
+            SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd");
+            
+            result.append(String.format("%-5s | %-20s | %-15s | %-15s | %-12s | %-10s | %-10s\n",
+                    "No.", "Challenge Name", "Duration", "Questions", "Overall Mark", "Open Date", "Close Date"));
+            result.append("-".repeat(100)).append("\n");
+        
+            try (PreparedStatement pstmt = con.prepareStatement(sql);
+                 ResultSet rs = pstmt.executeQuery()) {
+        
+                boolean hasResults = false;
+                while (rs.next()) {
+                    hasResults = true;
+                    int challengeNo = rs.getInt("challengeNo");
+                    String challengeName = rs.getString("challengeName");
+                    Time attemptDuration = rs.getTime("attemptDuration");
+                    int noOfQuestions = rs.getInt("noOfQuestions");
+                    int overallMark = rs.getInt("overallMark");
+                    Date openDate = rs.getDate("openDate");
+                    Date closeDate = rs.getDate("closeDate");
+        
+                    result.append(String.format("%-5d | %-20s | %-15s | %-15d | %-12d | %-10s | %-10s\n",
+                            challengeNo,
+                            challengeName,
+                            attemptDuration.toString(),
+                            noOfQuestions,
+                            overallMark,
+                            dateFormat.format(openDate),
+                            dateFormat.format(closeDate)));
+                }
+        
+                return hasResults ? result.toString() : "No challenges found in the database.";
+        
+            } catch (SQLException e) {
+                e.printStackTrace();
+                return "Error retrieving challenges: " + e.getMessage();
+            }
+        }
 
+        //handling attempt challenge command
+        private String attemptChallenge(String challengeNumber) {
+            if (!isAuthenticated() || isSchoolRepresentative) {
+                return "You must be logged in as a participant to attempt a challenge.";
+            }
+            try {
+                int challengeNo = Integer.parseInt(challengeNumber);
+                
+                // Fetch challenge details
+                String checkOpenSql = "SELECT * FROM Challenge WHERE challengeNo = ? AND openDate <= CURDATE() AND closeDate >= CURDATE()";
+                try (PreparedStatement pstmt = con.prepareStatement(checkOpenSql)) {
+                    pstmt.setInt(1, challengeNo);
+                    ResultSet rs = pstmt.executeQuery();
+                    if (!rs.next()) {
+                        return "Challenge is not open or does not exist.";
+                    }
+                    
+                    String challengeName = rs.getString("challengeName");
+                    String attemptDurationStr = rs.getString("attemptDuration");
+                    int totalQuestions = rs.getInt("noOfQuestions");
+                    
+                    LocalTime attemptDuration = LocalTime.parse(attemptDurationStr, DateTimeFormatter.ofPattern("HH:mm:ss"));
+                    long durationInSeconds = attemptDuration.toSecondOfDay();
+        
+                    // Check number of attempts
+                    if (hasExceededAttempts(challengeNo)) {
+                        return "You have already attempted this challenge 3 times.";
+                    }
+                    List<Map<String, Object>> questions = fetchRandomQuestions(challengeNo);
+                    String description = String.format("Challenge: %s\nDuration: %s",
+                            challengeName, attemptDuration.toString());
+                    out.println(description);
+                    out.flush();
+                    
+                    String startResponse = in.readLine();
+                    if (!startResponse.equalsIgnoreCase("start")) {
+                        return "Challenge cancelled.";
+                    }
+                    
+                    int attemptID = storeAttempt(challengeNo);
+                    return conductChallenge(questions, durationInSeconds, attemptID);
+                }
+            } catch (SQLException | IOException e) {
+                System.err.println("Error during challenge attempt: " + e.getMessage());
+                e.printStackTrace();
+                return "Error during challenge attempt: " + e.getMessage();
+            }
+        }
+
+        private String conductChallenge(List<Map<String, Object>> questions, long durationInSeconds, int attemptID) {
+            // TODO Auto-generated method stub
+            throw new UnsupportedOperationException("Unimplemented method 'conductChallenge'");
+        }
+        private int storeAttempt(int challengeNo) {
+            // TODO Auto-generated method stub
+            throw new UnsupportedOperationException("Unimplemented method 'storeAttempt'");
+        }
+        private List<Map<String, Object>> fetchRandomQuestions(int challengeNo) {
+            // TODO Auto-generated method stub
+            throw new UnsupportedOperationException("Unimplemented method 'fetchRandomQuestions'");
+        }
+        private boolean hasExceededAttempts(int challengeNo) {
+            // TODO Auto-generated method stub
+            throw new UnsupportedOperationException("Unimplemented method 'hasExceededAttempts'");
+        }
+        //handling confirm applicant method
+        private String confirmApplicant(String decision, String username) {
+            if (!isSchoolRepresentative) {
+                return "You don't have permission to confirm applicants.";
+            }
+        
+            boolean isApproved = decision.equalsIgnoreCase("yes");
+            String targetTable = isApproved ? "Participant" : "Rejected";
+        
+            try {
+                con.setAutoCommit(false);
+        
+                // Get applicant details
+                String selectSql = "SELECT * FROM Applicant WHERE userName = ? AND schoolRegNo = ?";
+                try (PreparedStatement selectStmt = con.prepareStatement(selectSql)) {
+                    selectStmt.setString(1, username);
+                    selectStmt.setInt(2, school_registration_number);
+                    ResultSet rs = selectStmt.executeQuery();
+        
+                    if (!rs.next()) {
+                        con.rollback();
+                        return "No applicant found with username: " + username;
+                    }
+        
+                    int applicantID = rs.getInt("applicantID");
+        
+                    // Insert into target table
+                    String insertSql;
+                    if (isApproved) {
+                        insertSql = "INSERT INTO Participant (applicantID, firstName, lastName, emailAddress, dateOfBirth, schoolRegNo, userName, imagePath, password) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                    } else {
+                        insertSql = "INSERT INTO Rejected (schoolRegNo, emailAddress, applicantID, userName, imagePath, firstName, lastName, password, dateOfBirth) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                    }
+        
+                    try (PreparedStatement insertStmt = con.prepareStatement(insertSql)) {
+                        if (isApproved) {
+                            insertStmt.setInt(1, applicantID);
+                            insertStmt.setString(2, rs.getString("firstName"));
+                            insertStmt.setString(3, rs.getString("lastName"));
+                            insertStmt.setString(4, rs.getString("emailAddress"));
+                            insertStmt.setDate(5, rs.getDate("dateOfBirth"));
+                            insertStmt.setInt(6, rs.getInt("schoolRegNo"));
+                            insertStmt.setString(7, rs.getString("userName"));
+                            insertStmt.setString(8, rs.getString("imagePath"));
+                            insertStmt.setString(9, rs.getString("password"));
+                        } else {
+                            insertStmt.setInt(1, rs.getInt("schoolRegNo"));
+                            insertStmt.setString(2, rs.getString("emailAddress"));
+                            insertStmt.setInt(3, applicantID);
+                            insertStmt.setString(4, rs.getString("userName"));
+                            insertStmt.setString(5, rs.getString("imagePath"));
+                            insertStmt.setString(6, rs.getString("firstName"));
+                            insertStmt.setString(7, rs.getString("lastName"));
+                            insertStmt.setString(8, rs.getString("password"));
+                            insertStmt.setDate(9, rs.getDate("dateOfBirth"));
+                        }
+        
+                        insertStmt.executeUpdate();
+                    }
+        
+                    // Delete from Applicant table
+                    String deleteSql = "DELETE FROM Applicant WHERE applicantID = ?";
+                    try (PreparedStatement deleteStmt = con.prepareStatement(deleteSql)) {
+                        deleteStmt.setInt(1, applicantID);
+                        deleteStmt.executeUpdate();
+                    }
+        
+                    con.commit();
+        
+                    // Send email notification (implement this method separately)
+                    sendEmailNotification(rs.getString("emailAddress"), isApproved);
+        
+                    return "Applicant " + username + " has been " + (isApproved ? "accepted" : "rejected") + ".";
+                }
+            } catch (SQLException e) {
+                try {
+                    con.rollback();
+                } catch (SQLException rollbackEx) {
+                    rollbackEx.printStackTrace();
+                }
+                e.printStackTrace();
+                return "Error confirming applicant: " + e.getMessage();
+            } finally {
+                try {
+                    con.setAutoCommit(true);
+                } catch (SQLException e) {
+                    e.printStackTrace();
+                }
+            }
+        }
+        
+        //sending an email notification
+        private void sendEmailNotification(String email, boolean isApproved) {
+            // Implement email sending logic here
+            System.out.println("Sending " + (isApproved ? "acceptance" : "rejection") + " email to: " + email);
+        }
+        private String viewApplicants() {
+            if (!isSchoolRepresentative) {
+                return "You don't have permission to view applicants.";
+            }
+        
+            String sql = "SELECT applicantID, userName, firstName, lastName, emailAddress, dateOfBirth FROM Applicant WHERE schoolRegNo = ?";
+            StringBuilder result = new StringBuilder();
+            result.append("List of Pending Applicants:\n");
+            result.append(String.format("%-5s | %-20s | %-20s | %-20s | %-30s | %-15s\n",
+                    "ID", "Username", "First Name", "Last Name", "Email", "Date of Birth"));
+            result.append("-".repeat(120)).append("\n");
+        
+            try (PreparedStatement pstmt = con.prepareStatement(sql)) {
+                pstmt.setInt(1, school_registration_number);
+                ResultSet rs = pstmt.executeQuery();
+        
+                while (rs.next()) {
+                    int applicantID = rs.getInt("applicantID");
+                    String username = rs.getString("userName");
+                    String firstName = rs.getString("firstName");
+                    String lastName = rs.getString("lastName");
+                    String email = rs.getString("emailAddress");
+                    Date dob = rs.getDate("dateOfBirth");
+        
+                    result.append(String.format("%-5d | %-20s | %-20s | %-20s | %-30s | %-15s\n",
+                            applicantID, username, firstName, lastName, email, dob.toString()));
+                }
+        
+                return result.toString();
+            } catch (SQLException e) {
+                e.printStackTrace();
+                return "Error retrieving applicants: " + e.getMessage();
+            }
+        }
+
+           
+    
+   
 }

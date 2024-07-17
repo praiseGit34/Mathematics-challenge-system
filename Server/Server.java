@@ -10,7 +10,7 @@ public class Server {
 
     public Server(int port) throws IOException, SQLException {
         serverSocket = new ServerSocket(port);
-        con = DriverManager.getConnection("jdbc:mysql://localhost:3306/mathematics", "root", "root");
+        con = DriverManager.getConnection("jdbc:mysql://localhost:3306/mathematics", "root", "");
     }
     
 
@@ -26,7 +26,8 @@ public class Server {
     public static void main(String[] args) {
         try {
             Server server = new Server(6546);
-            System.out.println("Server started on port 5000");
+            System.out.println("Mathematics Server started on port 6546");
+            System.out.println("waiting for client requests");
             server.start();
         } catch (IOException | SQLException e) {
             e.printStackTrace();
