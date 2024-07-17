@@ -292,9 +292,22 @@ public class ClientHandler extends Thread {
             // TODO Auto-generated method stub
             throw new UnsupportedOperationException("Unimplemented method 'conductChallenge'");
         }
-        private int storeAttempt(int challengeNo) {
-            // TODO Auto-generated method stub
-            throw new UnsupportedOperationException("Unimplemented method 'storeAttempt'");
+        private int storeAttempt(int challengeNo) throws SQLException {
+            String insertAttemptSql = "INSERT INTO Attempt (startTime, participantID, challengeNo, endTime, score, percentageMark) VALUES (?, ?, ?, NULL, NULL, NULL)";
+            try (PreparedStatement pstmt = con.prepareStatement(insertAttemptSql, Statement.RETURN_GENERATED_KEYS)) {
+                pstmt.setTimestamp(1, new Timestamp(System.currentTimeMillis()));
+                pstmt.setInt(2, participantID);
+                pstmt.setInt(3, challengeNo);
+                pstmt.executeUpdate();
+        
+                try (ResultSet generatedKeys = pstmt.getGeneratedKeys()) {
+                    if (generatedKeys.next()) {
+                        return generatedKeys.getInt(1);
+                    } else {
+                        throw new SQLException("Creating attempt failed, no ID obtained.");
+                    }
+                }
+            }
         }
         private List<Map<String, Object>> fetchRandomQuestions(int challengeNo) {
             // TODO Auto-generated method stub
