@@ -5,10 +5,14 @@ import java.net.*;
 import java.sql.*;
 import java.sql.Date;
 import java.text.*;
+import java.text.ParseException;
 import java.time.Duration;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
+import javax.mail.*;
+import javax.mail.PasswordAuthentication;
+import javax.mail.internet.*;
 
 public class ClientHandler implements Runnable {
     private final Socket clientSocket;
@@ -117,21 +121,33 @@ public class ClientHandler implements Runnable {
     }
 
     private String registerUser(String[] parts) throws SQLException {
-        if (parts.length != 8) {
+        System.out.println("Received registration request. Parts: " + Arrays.toString(parts));
+        
+        if (parts.length != 8) {  // REGISTER + 7 args
             return "Invalid registration format";
         }
-        String username = parts[2];
-        String firstName = parts[3];
-        String lastName = parts[4];
-        String email = parts[5];
-        String dateOfBirth = parts[6];
+        
+        String username = parts[1];
+        String firstName = parts[2];
+        String lastName = parts[3];
+        String email = parts[4];
+        String dateOfBirth = parts[5];
         int schoolRegNo;
         try {
-            schoolRegNo = Integer.parseInt(parts[7]);
+            schoolRegNo = Integer.parseInt(parts[6]);
         } catch (NumberFormatException e) {
+            System.out.println("Invalid school registration number: " + parts[6]);
             return "Invalid school registration number";
         }
-        String imagePath = parts[8];
+        String imagePath = parts[7];
+        
+        System.out.println("Parsed registration data:");
+        System.out.println("Username: " + username);
+        System.out.println("Name: " + firstName + " " + lastName);
+        System.out.println("Email: " + email);
+        System.out.println("Date of Birth: " + dateOfBirth);
+        System.out.println("School Reg No: " + schoolRegNo);
+        System.out.println("Image Path: " + imagePath);
         
         if (isRejectedApplicant(email, schoolRegNo)) {
             return "You have been previously rejected and cannot register under this school.";
@@ -156,22 +172,24 @@ public class ClientHandler implements Runnable {
             
             int affectedRows = pstmt.executeUpdate();
             if (affectedRows > 0) {
+                System.out.println("User registered successfully");
                 return "User registered successfully. Your password is: " + password;
             } else {
+                System.out.println("Failed to register user");
                 return "Failed to register user";
             }
         } catch (SQLException | ParseException e) {
+            System.out.println("Error registering user: " + e.getMessage());
             e.printStackTrace();
             return "Error registering user: " + e.getMessage();
         }
     }
-
     private String generateRandomPassword() {
         return String.format("%06d", new Random().nextInt(1000000));
     }
 
     private boolean isRejectedApplicant(String email, int schoolRegNo) throws SQLException {
-        String sql = "SELECT * FROM Rejected WHERE emailAddress = ? AND schoolRegNo = ?";
+        String sql = "SELECT * FROM Rejected WHERE email = ? AND schoolRegNo = ?";
         try (PreparedStatement pstmt = con.prepareStatement(sql)) {
             pstmt.setString(1, email);
             pstmt.setInt(2, schoolRegNo);
@@ -181,7 +199,7 @@ public class ClientHandler implements Runnable {
     }
 
     private boolean checkUserExists(String username, String email) throws SQLException {
-        String query = "SELECT COUNT(*) AS count FROM Applicant WHERE userName = ? OR emailAddress = ?";
+        String query = "SELECT COUNT(*) AS count FROM Applicant WHERE username = ? OR emailAddress = ?";
         try (PreparedStatement pstmt = con.prepareStatement(query)) {
             pstmt.setString(1, username);
             pstmt.setString(2, email);
@@ -197,7 +215,7 @@ public class ClientHandler implements Runnable {
 
     private String loginUser(String username, String password) {
         try {
-            String query = "SELECT * FROM Participant WHERE userName = ? AND password = ?";
+            String query = "SELECT * FROM Participant WHERE username = ? AND password = ?";
             PreparedStatement stmt = con.prepareStatement(query);
             stmt.setString(1, username);
             stmt.setString(2, password);
@@ -253,7 +271,7 @@ public class ClientHandler implements Runnable {
         SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd");
         
         result.append(String.format("%-5s | %-20s | %-15s | %-15s | %-12s | %-10s | %-10s\n",
-                "No.", "Challenge Name", "Duration", "Questions", "Overall Mark", "Open Date", "Close Date"));
+                "No.", "Challenge Name", "Duration", "Questions", "Overall Mark", "startDate", "endDate"));
         result.append("-".repeat(100)).append("\n");
     
         try (PreparedStatement pstmt = con.prepareStatement(sql);
@@ -592,10 +610,50 @@ public class ClientHandler implements Runnable {
         }
     }
 
-    private void sendEmailNotification(String email, boolean isApproved) {
-        // Implement email sending logic here
-        System.out.println("Sending " + (isApproved ? "acceptance" : "rejection") + " email to: " + email);
+    private void sendEmailNotification(String recipient, String subject,String body) {
+       
+    // Email configuration
+    String host = "smtp.gmail.com";  // Or your SMTP server
+    String from = "praiseasiimire38email@gmail.com";  // Your email address
+    String password = "xoyn gpbx udrz espd";  // Your email password
+
+    // Setup mail server properties
+    Properties properties = System.getProperties();
+    properties.put("mail.smtp.host", host);
+    properties.put("mail.smtp.port", "465");
+    properties.put("mail.smtp.ssl.enable", "true");
+    properties.put("mail.smtp.auth", "true");
+
+    // Get the Session object
+    Session session = Session.getInstance(properties, new javax.mail.Authenticator() {
+        protected PasswordAuthentication getPasswordAuthentication() {
+            return new PasswordAuthentication(from, password);
+        }
+    });
+
+    try {
+        // Create a default MimeMessage object
+        MimeMessage message = new MimeMessage(session);
+
+        // Set From: header field
+        message.setFrom(new InternetAddress(from));
+
+        // Set To: header field
+        message.addRecipient(Message.RecipientType.TO, new InternetAddress(recipient));
+
+        // Set Subject: header field
+        message.setSubject(subject);
+
+        // Set the actual message
+        message.setText(body);
+
+        // Send message
+        Transport.send(message);
+        System.out.println("Email sent successfully to " + recipient);
+    } catch (MessagingException mex) {
+        mex.printStackTrace();
     }
+}
 
     private String viewApplicants() {
         if (!isSchoolRepresentative) {
