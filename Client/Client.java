@@ -33,6 +33,15 @@ public class Client {
         try {
             while (true) {
                 System.out.println("Welcome to the International Education System Mathematics Competition System");
+                System.out.println("\tMenu");
+                System.out.println(" Login: login username password");
+                System.out.println(" Register: Register username firstname lastname emailAddress date_of_birth school_registration_number image_file.png");
+                System.out.println(" Logout: logout");
+                System.out.println(" View Challenges: ViewChallenges");
+                System.out.println(" Attempt Challenge (for participants only): attemptChallenge challengeNumber");
+                System.out.println(" View Applicants (for school representatives only): viewApplicants");
+                System.out.println(" Confirm Applicant (for school representatives only): confirm yes/no username");
+                System.out.println(" Exit: exit");
                 System.out.println("Enter command to continue ");
                 System.out.print(">>> ");
 
