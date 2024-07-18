@@ -96,18 +96,49 @@ public class ClientHandler implements Runnable {
                 return "Invalid request";
         }
     }
-
-    private String generateSchoolRepresentativePassword(String emailAddress) throws SQLException {
-        String password = String.format("%05d", new Random().nextInt(100000));
-        this.currentSchoolRepEmail = emailAddress;
-        this.currentSchoolRepPassword = password;
-        
-        // Send email with the new password
-        String subject = "Your New Password for School Representative Account";
-        String body = "Your new password is: " + password + "\nPlease use this password to log in.";
-        sendRepresentativePassword(emailAddress,body,subject);
-   
-        return "A new password has been generated and sent to your email: " + emailAddress;
+    
+//generate password for the password
+    private String generateSchoolRepresentativePassword(String email) {
+        try {
+            // Check if the email exists in the School table
+            String checkEmailSql = "SELECT * FROM School WHERE emailAddress = ?";
+            try (PreparedStatement checkEmailStmt = con.prepareStatement(checkEmailSql)) {
+                checkEmailStmt.setString(1, email);
+                ResultSet emailRs = checkEmailStmt.executeQuery();
+                if (!emailRs.next()) {
+                    System.out.println("Debug: Email not found in School table: " + email);
+                    return "Error: Invalid email address. This email is not registered as a school representative.";
+                }
+                System.out.println("Debug: Email found in School table: " + email);
+            }
+    
+            // Generate a new password
+            String password = String.format("%05d", new Random().nextInt(100000));
+            
+            // Update the password in the School table
+            String updatePasswordSql = "UPDATE School SET password = ? WHERE emailAddress = ?";
+            try (PreparedStatement updateStmt = con.prepareStatement(updatePasswordSql)) {
+                updateStmt.setString(1, password);
+                updateStmt.setString(2, email);
+                int updatedRows = updateStmt.executeUpdate();
+                if (updatedRows == 0) {
+                    System.out.println("Debug: Failed to update password for email: " + email);
+                    return "Error: Failed to update password in the database.";
+                }
+                System.out.println("Debug: Password updated in database for email: " + email);
+            }
+    
+            // Send email with the new password
+            String subject = "Your New Password for School Representative Account";
+            String body = "Your new password is: " + password + "\nPlease use this password to log in.";
+            sendEmail(email, subject, body);
+    
+            return "A new password has been generated and sent to your email: " + email + 
+                   "\nPlease use this password to log in.";
+        } catch (SQLException e) {
+            e.printStackTrace();
+            return "Error generating password: " + e.getMessage();
+        }
     }
     //method to send an email to the representative with the password for logging in
     private void sendRepresentativePassword(String emailAddress,String body,String subject) {
