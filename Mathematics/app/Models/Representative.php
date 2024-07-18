@@ -7,5 +7,12 @@ use Illuminate\Database\Eloquent\Model;
 
 class Representative extends Model
 {
-    use HasFactory;
+    //use HasFactory;
+    
+
+    public function school()
+    {
+        return $this->belongsTo(School::class);
+    }
+
 }

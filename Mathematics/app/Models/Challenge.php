@@ -7,5 +7,17 @@ use Illuminate\Database\Eloquent\Model;
 
 class Challenge extends Model
 {
-    use HasFactory;
+    //use HasFactory;
+   
+
+    public function questions()
+    {
+        return $this->hasMany(Question::class);
+    }
+
+    public function attempts()
+    {
+        return $this->hasMany(Attempt::class);
+    }
 }
+

@@ -7,5 +7,22 @@ use Illuminate\Database\Eloquent\Model;
 
 class Attempt extends Model
 {
-    use HasFactory;
+    //use HasFactory;
+  
+
+    public function participant()
+    {
+        return $this->belongsTo(Participant::class);
+    }
+
+    public function challenge()
+    {
+        return $this->belongsTo(Challenge::class);
+    }
+
+    public function answers()
+    {
+        return $this->hasMany(AttemptAnswer::class);
+    }
 }
+
