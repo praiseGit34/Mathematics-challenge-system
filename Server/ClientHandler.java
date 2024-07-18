@@ -64,7 +64,7 @@ public class ClientHandler implements Runnable {
             in.readLine();
         }
     }
-
+//method for handling all the commands from the client
     private String processRequest(String request) throws SQLException {
         String[] partofCommand = request.split(" ");
         String action = partofCommand[0].toUpperCase();
@@ -101,15 +101,45 @@ public class ClientHandler implements Runnable {
         String password = String.format("%05d", new Random().nextInt(100000));
         this.currentSchoolRepEmail = emailAddress;
         this.currentSchoolRepPassword = password;
-   
+        
         // Send email with the new password
         String subject = "Your New Password for School Representative Account";
         String body = "Your new password is: " + password + "\nPlease use this password to log in.";
-        sendEmail(emailAddress, subject, body);
+        sendRepresentativePassword(emailAddress,body,subject);
    
         return "A new password has been generated and sent to your email: " + emailAddress;
     }
-
+    //method to send an email to the representative with the password for logging in
+    private void sendRepresentativePassword(String emailAddress,String body,String subject) {
+            String host = "smtp.gmail.com";
+            String from = "praiseasiimire38@gmail.com";
+            String password = "tylw lnxj cpro oiki";  // Use the App Password generated earlier
+        
+            Properties properties = new Properties();
+            properties.put("mail.smtp.host", host);
+            properties.put("mail.smtp.port", "587");
+            properties.put("mail.smtp.auth", "true");
+            properties.put("mail.smtp.starttls.enable", "true");
+        
+            Session session = Session.getInstance(properties, new javax.mail.Authenticator() {
+                protected PasswordAuthentication getPasswordAuthentication() {
+                    return new PasswordAuthentication(from, password);
+                }
+            });
+        
+            try {
+                Message message = new MimeMessage(session);
+                message.setFrom(new InternetAddress(from));
+                message.setRecipients(Message.RecipientType.TO, InternetAddress.parse(emailAddress));
+                message.setSubject("subject");
+                message.setText(body);
+        
+                Transport.send(message);
+                System.out.println("Email sent successfully to " + emailAddress);
+            } catch (MessagingException e) {
+                throw new RuntimeException(e);
+            }
+        }
 
     private String registerUser(String[] parts) throws SQLException {
         System.out.println("Received registration request. Parts: " + Arrays.toString(parts));
@@ -199,8 +229,8 @@ public class ClientHandler implements Runnable {
             Message message = new MimeMessage(session);
             message.setFrom(new InternetAddress(from));
             message.setRecipients(Message.RecipientType.TO, InternetAddress.parse(email));
-            message.setSubject("Dear participant");
-            message.setText("hope this email finds you well\n congs you have been registered");
+            message.setSubject("Dear "+username);
+            message.setText("Hope this email finds you well\nThis is to congratulate you that you have been registered");
     
             Transport.send(message);
             System.out.println("Email sent successfully to " + email);
@@ -208,11 +238,11 @@ public class ClientHandler implements Runnable {
             throw new RuntimeException(e);
         }
     }
-
+//generate a six digit password random
     private String generateRandomPassword() {
         return String.format("%06d", new Random().nextInt(1000000));
     }
-
+//handles participants who have been previously rejected
     private boolean isRejectedApplicant(String email, int schoolRegNo) throws SQLException {
         String sql = "SELECT * FROM Rejected WHERE email = ? AND schoolRegNo = ?";
         try (PreparedStatement pstmt = con.prepareStatement(sql)) {
@@ -222,7 +252,7 @@ public class ClientHandler implements Runnable {
             return rs.next();
         }
     }
-
+//handles the participants who previously registered
     private boolean checkUserExists(String username, String email) throws SQLException {
         String query = "SELECT COUNT(*) AS count FROM Applicant WHERE username = ? OR emailAddress = ?";
         try (PreparedStatement pstmt = con.prepareStatement(query)) {
@@ -291,6 +321,7 @@ public class ClientHandler implements Runnable {
         if (!isAuthenticated()) {
             return "You must be logged in to view challenges.";
         }
+        //handles the fetching and formatting of challenge data  if the user is authenticated
         String sql = "SELECT * FROM Challenge ORDER BY challengeNo";
         StringBuilder result = new StringBuilder();
         SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd");

@@ -17,19 +17,19 @@ public class Client {
         in = new BufferedReader(new InputStreamReader(soc.getInputStream()));
         scanner = new Scanner(System.in);
     }
-
+//sending the commands to the server through the socket
     public String sendMessage(String msg) throws IOException {
         out.println(msg);
         return in.readLine();
     }
-
+//closing all the classes
     public void stopConnection() throws IOException {
         in.close();
         out.close();
         soc.close();
         scanner.close();
     }
-
+//contains a menu of instructions
     public void run() {
         try {
             while (true) {
@@ -43,14 +43,14 @@ public class Client {
                 System.out.println(" View Applicants (for school representatives only): viewApplicants");
                 System.out.println(" Confirm Applicant (for school representatives only): confirm yes/no username");
                 System.out.println(" Exit: exit");
-                System.out.println("Enter command to continue ");
+                System.out.println(" Enter command to continue ");
                 System.out.print(">>> ");
-
+                //accepts user input from the keyboard
                 String command = scanner.nextLine().trim();
                 if (command.equalsIgnoreCase("exit")) {
                     break;
                 }
-            executeCommand(command);
+            executeCommand(command);//calling the execute method part to process the command inputted by the client
             }
         } catch (IOException e) {
             System.out.println("Error in client: " + e.getMessage());
@@ -73,8 +73,7 @@ public class Client {
                     System.out.println("Invalid registration format. Use: Register username firstname lastname emailAddress date_of_birth school_registration_number image_file.png");
                 } else {
                     String[] registerArgs = Arrays.copyOfRange(partcommand, 1, partcommand.length);
-                    register(registerArgs);
-                   
+                    register(registerArgs);   
                 }
                 break;
             case "login":
@@ -123,7 +122,7 @@ public class Client {
         String response = sendMessage("LOGIN " + email);
         System.out.println(response);
         if (response.contains("password has been generated")) {
-            System.out.print("Please enter the password sent to your email: ");
+            //System.out.print("Please enter the password sent to your email: ");
             String password = scanner.nextLine();
             response = sendMessage("LOGIN " + email + " " + password);
             System.out.println(response);
