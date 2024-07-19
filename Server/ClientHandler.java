@@ -96,8 +96,7 @@ public class ClientHandler implements Runnable {
                 return "Invalid request";
         }
     }
-    
-//generate password for the password
+
     private String generateSchoolRepresentativePassword(String email) {
         try {
             // Check if the email exists in the School table
@@ -131,7 +130,7 @@ public class ClientHandler implements Runnable {
             // Send email with the new password
             String subject = "Your New Password for School Representative Account";
             String body = "Your new password is: " + password + "\nPlease use this password to log in.";
-            sendEmail(email, subject, body);
+            sendRepresentativePassword(email, subject, body);
     
             return "A new password has been generated and sent to your email: " + email + 
                    "\nPlease use this password to log in.";
@@ -226,6 +225,7 @@ public class ClientHandler implements Runnable {
             if (affectedRows > 0) {
                 System.out.println("User registered successfully");
                 sendParticipantEmail(email,username);
+                sendEmail(email, password, sql);
                 return "User registered successfully. Your password is: " + password;
                
             } else {
@@ -298,9 +298,12 @@ public class ClientHandler implements Runnable {
         }
         return false;
     }
-
+    //login method
     private String loginUser(String username, String password) {
         try {
+            System.out.println("Debug: Attempting login for: " + username);
+            
+            // First, check if it's a participant
             String query = "SELECT * FROM Participant WHERE username = ? AND password = ?";
             PreparedStatement stmt = con.prepareStatement(query);
             stmt.setString(1, username);
@@ -322,12 +325,13 @@ public class ClientHandler implements Runnable {
                     isSchoolRepresentative = true;
                     return "Login successful for school representative: " + username;
                 } else {
+                    System.out.println("Debug: Invalid login attempt for: " + username);
                     return "Invalid username or password.";
                 }
             }
         } catch (SQLException e) {
             e.printStackTrace();
-            return "Error during login.";
+            return "Error during login: " + e.getMessage();
         }
     }
 
@@ -630,46 +634,49 @@ public class ClientHandler implements Runnable {
                     return "No applicant found with username: " + username;
                 }
 
-                int applicantID = rs.getInt("applicantID");
+               // int applicantID = rs.getInt("applicantID");
 
                 // Insert into target table
                 String insertSql;
+                String emailAddress ="select emailAddress from applicant where username= ?";
                 if (isApproved) {
-                    insertSql = "INSERT INTO Participant (applicantID, firstName, lastName, emailAddress, dateOfBirth, schoolRegNo, userName, imagePath, password) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                    insertSql = "INSERT INTO Participant ( firstName, lastName, emailAddress, dateOfBirth, schoolRegNo, userName, imagePath, password) VALUES ( ?, ?, ?, ?, ?, ?, ?, ?)";
+                    //sendAcceptanceEmail(username,emailAddress);
                 } else {
-                    insertSql = "INSERT INTO Rejected (schoolRegNo, emailAddress, applicantID, userName, imagePath, firstName, lastName, password, dateOfBirth) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                    insertSql = "INSERT INTO Rejected (schoolRegNo, emailAddress,userName, imagePath, firstName, lastName, password, dateOfBirth) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
+                    //sendRejectedEmail(username,emailAddress);
                 }
 
                 try (PreparedStatement insertStmt = con.prepareStatement(insertSql)) {
                     if (isApproved) {
-                        insertStmt.setInt(1, applicantID);
-                        insertStmt.setString(2, rs.getString("firstName"));
-                        insertStmt.setString(3, rs.getString("lastName"));
-                        insertStmt.setString(4, rs.getString("emailAddress"));
-                        insertStmt.setDate(5, rs.getDate("dateOfBirth"));
-                        insertStmt.setInt(6, rs.getInt("schoolRegNo"));
-                        insertStmt.setString(7, rs.getString("userName"));
-                        insertStmt.setString(8, rs.getString("imagePath"));
-                        insertStmt.setString(9, rs.getString("password"));
+                        //insertStmt.setInt(1, applicantID);
+                        insertStmt.setString(1, rs.getString("firstName"));
+                        insertStmt.setString(2, rs.getString("lastName"));
+                        insertStmt.setString(3, rs.getString("emailAddress"));
+                        insertStmt.setDate(4, rs.getDate("dateOfBirth"));
+                        insertStmt.setInt(5, rs.getInt("schoolRegNo"));
+                        insertStmt.setString(6, rs.getString("username"));
+                        insertStmt.setString(7, rs.getString("imagePath"));
+                        insertStmt.setString(8, rs.getString("password"));
                     } else {
                         insertStmt.setInt(1, rs.getInt("schoolRegNo"));
                         insertStmt.setString(2, rs.getString("emailAddress"));
-                        insertStmt.setInt(3, applicantID);
-                        insertStmt.setString(4, rs.getString("userName"));
-                        insertStmt.setString(5, rs.getString("imagePath"));
-                        insertStmt.setString(6, rs.getString("firstName"));
-                        insertStmt.setString(7, rs.getString("lastName"));
-                        insertStmt.setString(8, rs.getString("password"));
-                        insertStmt.setDate(9, rs.getDate("dateOfBirth"));
+                        //insertStmt.setInt(3, applicantID);
+                        insertStmt.setString(3, rs.getString("userName"));
+                        insertStmt.setString(4, rs.getString("imagePath"));
+                        insertStmt.setString(5, rs.getString("firstName"));
+                        insertStmt.setString(6, rs.getString("lastName"));
+                        insertStmt.setString(7, rs.getString("password"));
+                        insertStmt.setDate(8, rs.getDate("dateOfBirth"));
                     }
 
                     insertStmt.executeUpdate();
                 }
 
                 // Delete from Applicant table
-                String deleteSql = "DELETE FROM Applicant WHERE applicantID = ?";
+                String deleteSql = "DELETE FROM Applicant WHERE username = ?";
                 try (PreparedStatement deleteStmt = con.prepareStatement(deleteSql)) {
-                    deleteStmt.setInt(1, applicantID);
+                    deleteStmt.setString(1, username);
                     deleteStmt.executeUpdate();
                 }
 
@@ -696,6 +703,68 @@ public class ClientHandler implements Runnable {
             }
         }
     }
+    private void sendRejectedEmail(String username, String emailAddress) {
+        String host = "smtp.gmail.com";
+        String from = "praiseasiimire38@gmail.com";
+        String password = "tylw lnxj cpro oiki";  // Use the App Password generated earlier
+    
+        Properties properties = new Properties();
+        properties.put("mail.smtp.host", host);
+        properties.put("mail.smtp.port", "587");
+        properties.put("mail.smtp.auth", "true");
+        properties.put("mail.smtp.starttls.enable", "true");
+    
+        Session session = Session.getInstance(properties, new javax.mail.Authenticator() {
+            protected PasswordAuthentication getPasswordAuthentication() {
+                return new PasswordAuthentication(from, password);
+            }
+        });
+    
+        try {
+            Message message = new MimeMessage(session);
+            message.setFrom(new InternetAddress(from));
+            message.setRecipients(Message.RecipientType.TO, InternetAddress.parse(emailAddress));
+            message.setSubject("Dear "+username);
+            message.setText("oh sorry!\nYou have been rejected.kindly try again");
+    
+            Transport.send(message);
+            System.out.println("Email sent successfully to " + emailAddress);
+        } catch (MessagingException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private void sendAcceptanceEmail(String username ,String emailAddress) {
+        String host = "smtp.gmail.com";
+        String from = "praiseasiimire38@gmail.com";
+        String password = "tylw lnxj cpro oiki";  // Use the App Password generated earlier
+    
+        Properties properties = new Properties();
+        properties.put("mail.smtp.host", host);
+        properties.put("mail.smtp.port", "587");
+        properties.put("mail.smtp.auth", "true");
+        properties.put("mail.smtp.starttls.enable", "true");
+    
+        Session session = Session.getInstance(properties, new javax.mail.Authenticator() {
+            protected PasswordAuthentication getPasswordAuthentication() {
+                return new PasswordAuthentication(from, password);
+            }
+        });
+    
+        try {
+            Message message = new MimeMessage(session);
+            message.setFrom(new InternetAddress(from));
+            message.setRecipients(Message.RecipientType.TO, InternetAddress.parse(emailAddress));
+            message.setSubject("Dear "+username);
+            message.setText("Congratulations you have been accepted\nKindly continue with the chhallenge");
+    
+            Transport.send(message);
+            System.out.println("Email sent successfully to " + emailAddress);
+        } catch (MessagingException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
     private void sendEmail(String emailAddress, String subject, String body) {
         String host = "smtp.gmail.com";
         String from = "praiseasiimire38@gmail.com";
@@ -730,34 +799,38 @@ public class ClientHandler implements Runnable {
         if (!isSchoolRepresentative) {
             return "You don't have permission to view applicants.";
         }
-
-        String sql = "SELECT applicantID, userName, firstName, lastName, emailAddress, dateOfBirth FROM Applicant WHERE schoolRegNo = ?";
+    
+        String sql = "SELECT userName, firstName, lastName, emailAddress, dateOfBirth FROM Applicant WHERE schoolRegNo = ?";
         StringBuilder result = new StringBuilder();
         result.append("List of Pending Applicants:\n");
-        result.append(String.format("%-5s | %-20s | %-20s | %-20s | %-30s | %-15s\n",
-                "ID", "Username", "First Name", "Last Name", "Email", "Date of Birth"));
+        result.append(String.format("%-20s | %-20s | %-20s | %-30s | %-15s\n",
+                 "Username", "First Name", "Last Name", "Email", "Date of Birth"));
         result.append("-".repeat(120)).append("\n");
-
+    
         try (PreparedStatement pstmt = con.prepareStatement(sql)) {
             pstmt.setInt(1, school_registration_number);
             ResultSet rs = pstmt.executeQuery();
-
+    
+            boolean hasApplicants = false;
             while (rs.next()) {
-                int applicantID = rs.getInt("applicantID");
+                hasApplicants = true;
                 String username = rs.getString("userName");
                 String firstName = rs.getString("firstName");
                 String lastName = rs.getString("lastName");
                 String email = rs.getString("emailAddress");
                 Date dob = rs.getDate("dateOfBirth");
-
-                result.append(String.format("%-5d | %-20s | %-20s | %-20s | %-30s | %-15s\n",
-                        applicantID, username, firstName, lastName, email, dob.toString()));
+    
+                result.append(String.format("%-20s | %-20s | %-20s | %-30s | %-15s\n",
+                         username, firstName, lastName, email, dob.toString()));
             }
-
+    
+            if (!hasApplicants) {
+                result.append("No pending applicants found for your school.\n");
+            }
+    
             return result.toString();
         } catch (SQLException e) {
             e.printStackTrace();
             return "Error retrieving applicants: " + e.getMessage();
         }
-    }
-}
+    }}
