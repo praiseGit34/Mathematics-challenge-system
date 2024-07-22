@@ -162,7 +162,7 @@ public class ClientHandler implements Runnable {
                 message.setFrom(new InternetAddress(from));
                 message.setRecipients(Message.RecipientType.TO, InternetAddress.parse(emailAddress));
                 message.setSubject("subject");
-                message.setText(password);
+                message.setText(body);
         
                 Transport.send(message);
                 System.out.println("Email sent successfully to " + emailAddress);
