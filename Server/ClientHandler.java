@@ -100,7 +100,7 @@ public class ClientHandler implements Runnable {
     private String generateSchoolRepresentativePassword(String email) {
         try {
             // Check if the email exists in the School table
-            String checkEmailSql = "SELECT * FROM School WHERE emailAddress = ?";
+            String checkEmailSql = "SELECT * FROM Schools WHERE emailAddress = ?";
             try (PreparedStatement checkEmailStmt = con.prepareStatement(checkEmailSql)) {
                 checkEmailStmt.setString(1, email);
                 ResultSet emailRs = checkEmailStmt.executeQuery();
@@ -115,7 +115,7 @@ public class ClientHandler implements Runnable {
             String password = String.format("%05d", new Random().nextInt(100000));
             
             // Update the password in the School table
-            String updatePasswordSql = "UPDATE School SET password = ? WHERE emailAddress = ?";
+            String updatePasswordSql = "UPDATE Schools SET password = ? WHERE emailAddress = ?";
             try (PreparedStatement updateStmt = con.prepareStatement(updatePasswordSql)) {
                 updateStmt.setString(1, password);
                 updateStmt.setString(2, email);
@@ -206,8 +206,9 @@ public class ClientHandler implements Runnable {
         if (checkUserExists(username, email)) {
             return "User with this username or email already exists.";
         }
+        
         String password = generateRandomPassword();
-        String sql = "INSERT INTO Applicant (schoolRegNo, emailAddress, userName, imagePath, firstName, lastName, password, dateOfBirth) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
+        String sql = "INSERT INTO Applicants (schoolRegNo, email, userName, imagePath, firstName, lastName, password, dateOfBirth) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
         try (PreparedStatement pstmt = con.prepareStatement(sql)) {
             pstmt.setInt(1, schoolRegNo);
             pstmt.setString(2, email);
@@ -285,7 +286,7 @@ public class ClientHandler implements Runnable {
     }
 //handles the participants who previously registered
     private boolean checkUserExists(String username, String email) throws SQLException {
-        String query = "SELECT COUNT(*) AS count FROM Applicant WHERE username = ? OR emailAddress = ?";
+        String query = "SELECT COUNT(*) AS count FROM Applicants WHERE username = ? OR email = ?";
         try (PreparedStatement pstmt = con.prepareStatement(query)) {
             pstmt.setString(1, username);
             pstmt.setString(2, email);
@@ -315,7 +316,7 @@ public class ClientHandler implements Runnable {
                 return "Login successful for user: " + username;
             } else {
                 // Check if it's a school representative
-                query = "SELECT * FROM School WHERE emailAddress = ? AND password = ?";
+                query = "SELECT * FROM Schools WHERE emailAddress = ? AND password = ?";
                 stmt = con.prepareStatement(query);
                 stmt.setString(1, username);
                 stmt.setString(2, password);
