@@ -348,39 +348,39 @@ public class ClientHandler implements Runnable {
         if (!isAuthenticated()) {
             return "You must be logged in to view challenges.";
         }
-        //handles the fetching and formatting of challenge data  if the user is authenticated
-        String sql = "SELECT * FROM Challenge ORDER BY challengeNo";
+        String sql = "SELECT * FROM Challenges ORDER BY challengeNo";
         StringBuilder result = new StringBuilder();
         SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd");
         
-        result.append(String.format("%-5s | %-20s | %-15s | %-15s | %-12s | %-10s | %-10s\n",
-                "No.", "Challenge Name", "Duration", "Questions", "Overall Mark", "startDate", "endDate"));
+        result.append(String.format("%-5s | %-20s | %-15s | %-15s | %-12s | %-10s\n",
+                "No.", "Challenge Name", "startDate", "endDate", "Duration", "numOfQuestions"));
         result.append("-".repeat(100)).append("\n");
-    
         try (PreparedStatement pstmt = con.prepareStatement(sql);
              ResultSet rs = pstmt.executeQuery()) {
-    
-            boolean hasResults = false;
+             boolean hasResults = false;
             while (rs.next()) {
                 hasResults = true;
                 int challengeNo = rs.getInt("challengeNo");
                 String challengeName = rs.getString("challengeName");
-                Time attemptDuration = rs.getTime("attemptDuration");
-                int noOfQuestions = rs.getInt("noOfQuestions");
-                int overallMark = rs.getInt("overallMark");
-                Date openDate = rs.getDate("openDate");
-                Date closeDate = rs.getDate("closeDate");
-    
-                result.append(String.format("%-5d | %-20s | %-15s | %-15d | %-12d | %-10s | %-10s\n",
+                Date startDate = rs.getDate("startDate");
+                Date endDate = rs.getDate("endDate");
+                
+                // Handle Duration as a Long instead of Time
+                long durationInSeconds = rs.getLong("Duration");
+                String durationFormatted = String.format("%02d:%02d:%02d", 
+                    durationInSeconds / 3600, (durationInSeconds % 3600) / 60, durationInSeconds % 60);
+                
+                int noOfQuestions = rs.getInt("numOfQuestions");
+                
+                result.append(String.format("%-5d | %-20s | %-15s | %-15s | %-12s | %-10d\n",
                         challengeNo,
                         challengeName,
-                        attemptDuration.toString(),
-                        noOfQuestions,
-                        overallMark,
-                        dateFormat.format(openDate),
-                        dateFormat.format(closeDate)));
+                        dateFormat.format(startDate),
+                        dateFormat.format(endDate),
+                        durationFormatted,
+                        noOfQuestions
+                ));
             }
-    
             return hasResults ? result.toString() : "No challenges found in the database.";
     
         } catch (SQLException e) {
@@ -388,53 +388,76 @@ public class ClientHandler implements Runnable {
             return "Error retrieving challenges: " + e.getMessage();
         }
     }
-
-    private String attemptChallenge(String challengeNumber) {
-        if (!isAuthenticated() || isSchoolRepresentative) {
-            return "You must be logged in as a participant to attempt a challenge.";
-        }
-        try {
-            int challengeNo = Integer.parseInt(challengeNumber);
-            
-            String checkOpenSql = "SELECT * FROM Challenge WHERE challengeNo = ? AND openDate <= CURDATE() AND closeDate >= CURDATE()";
-            try (PreparedStatement pstmt = con.prepareStatement(checkOpenSql)) {
-                pstmt.setInt(1, challengeNo);
-                ResultSet rs = pstmt.executeQuery();
-                if (!rs.next()) {
-                    return "Challenge is not open or does not exist.";
-                }
-                
-                String challengeName = rs.getString("challengeName");
-                String attemptDurationStr = rs.getString("attemptDuration");
-                int totalQuestions = rs.getInt("noOfQuestions");
-                
-                LocalTime attemptDuration = LocalTime.parse(attemptDurationStr, DateTimeFormatter.ofPattern("HH:mm:ss"));
-                long durationInSeconds = attemptDuration.toSecondOfDay();
-    
-                if (hasExceededAttempts(challengeNo)) {
-                    return "You have already attempted this challenge 3 times.";
-                }
-                List<Map<String, Object>> questions = fetchRandomQuestions(challengeNo);
-                String description = String.format("Challenge: %s\nDuration: %s",
-                        challengeName, attemptDuration.toString());
-                out.println(description);
-                out.flush();
-                
-                String startResponse = in.readLine();
-                if (!startResponse.equalsIgnoreCase("start")) {
-                    return "Challenge cancelled.";
-                }
-                
-                int attemptID = storeAttempt(challengeNo);
-                return conductChallenge(questions, durationInSeconds, attemptID);
+//method to handle attempt challenge command
+private String attemptChallenge(String challengeNumber) {
+    if (!isAuthenticated() || isSchoolRepresentative) {
+        return "You must be logged in as a participant to attempt a challenge.";
+    }
+    try {
+        int challengeNo = Integer.parseInt(challengeNumber);
+        
+        String checkOpenSql = "SELECT * FROM Challenges WHERE challengeNo = ? AND startDate <= CURDATE() AND endDate >= CURDATE()";
+        try (PreparedStatement pstmt = con.prepareStatement(checkOpenSql)) {
+            pstmt.setInt(1, challengeNo);
+            ResultSet rs = pstmt.executeQuery();
+            if (!rs.next()) {
+                return "Challenge is not open or does not exist.";
             }
-        } catch (SQLException | IOException e) {
-            System.err.println("Error during challenge attempt: " + e.getMessage());
-            e.printStackTrace();
-            return "Error during challenge attempt: " + e.getMessage();
+            
+            String challengeName = rs.getString("challengeName");
+            String attemptDurationStr = rs.getString("Duration");
+            
+            LocalTime Duration = LocalTime.parse(attemptDurationStr, DateTimeFormatter.ofPattern("HH:mm:ss"));
+            long durationInSeconds = Duration.toSecondOfDay();
+
+            if (hasExceededAttempts(challengeNo)) {
+                return "You have already attempted this challenge 3 times.";
+            }
+            List<Map<String, Object>> questions = fetchRandomQuestions(challengeNo);
+            if (questions.isEmpty()) {
+                return "No questions available for this challenge.";
+            }
+            String description = String.format("Challenge: %s\nDuration: %s",
+                    challengeName, Duration.toString());
+            out.println(description);
+            out.flush();
+            
+            String startResponse = in.readLine();
+            if (!startResponse.equalsIgnoreCase("start")) {
+                return "Challenge cancelled.";
+            }
+            
+            int attemptID = storeAttempt(challengeNo);
+            return conductChallenge(questions, durationInSeconds, attemptID);
+        }
+    } catch (SQLException | IOException e) {
+        System.err.println("Error during challenge attempt: " + e.getMessage());
+        e.printStackTrace();
+        return "Error during challenge attempt: " + e.getMessage();
+    }
+}
+
+private List<Map<String, Object>> fetchRandomQuestions(int challengeNo) throws SQLException {
+    List<Map<String, Object>> questions = new ArrayList<>();
+    String sql = "SELECT q.questionNo, q.question, q.marks " +
+                 "FROM Questions q " +
+                 "JOIN Challenges cq ON q.questionNo = cq.numOfQuestions " +
+                 "WHERE cq.challengeNo = ? " +
+                 "ORDER BY RAND() " +
+                 "LIMIT 10";
+    try (PreparedStatement pstmt = con.prepareStatement(sql)) {
+        pstmt.setInt(1, challengeNo);
+        ResultSet rs = pstmt.executeQuery();
+        while (rs.next()) {
+            Map<String, Object> question = new HashMap<>();
+            question.put("questionNo", rs.getInt("questionNo"));
+            question.put("question", rs.getString("question"));
+            question.put("marks", rs.getInt("marks"));
+            questions.add(question);
         }
     }
-
+    return questions;
+}
     private String conductChallenge(List<Map<String, Object>> questions, long durationInSeconds, int attemptID) throws IOException, SQLException {
         int totalScore = 0;
         int totalMarks = 0;
@@ -575,23 +598,23 @@ public class ClientHandler implements Runnable {
         }
     }
 
-    private List<Map<String, Object>> fetchRandomQuestions(int challengeNo) throws SQLException {
-        String questionSql = "SELECT q.questionNo, q.question, a.answer, a.marksAwarded FROM Question q JOIN Answer a ON q.questionNo = a.questionNo WHERE q.questionBankID = (SELECT questionBankID FROM Challenge WHERE challengeNo = ?) ORDER BY RAND() LIMIT 10";
-        List<Map<String, Object>> questions = new ArrayList<>();
-        try (PreparedStatement questionStmt = con.prepareStatement(questionSql)) {
-            questionStmt.setInt(1, challengeNo);
-            ResultSet questionRs = questionStmt.executeQuery();
-            while (questionRs.next()) {
-                Map<String, Object> question = new HashMap<>();
-                question.put("questionNo", questionRs.getInt("questionNo"));
-                question.put("question", questionRs.getString("question"));
-                question.put("answer", questionRs.getString("answer"));
-                question.put("marks", questionRs.getInt("marksAwarded"));
-                questions.add(question);
-            }
-        }
-        return questions;
-    }
+    // private List<Map<String, Object>> fetchRandomQuestions(int challengeNo) throws SQLException {
+    //     String questionSql = "SELECT q.questionNo, q.question, a.answer, a.marksAwarded FROM Question q JOIN Answer a ON q.questionNo = a.questionNo WHERE q.questionBankID = (SELECT questionBankID FROM Challenge WHERE challengeNo = ?) ORDER BY RAND() LIMIT 10";
+    //     List<Map<String, Object>> questions = new ArrayList<>();
+    //     try (PreparedStatement questionStmt = con.prepareStatement(questionSql)) {
+    //         questionStmt.setInt(1, challengeNo);
+    //         ResultSet questionRs = questionStmt.executeQuery();
+    //         while (questionRs.next()) {
+    //             Map<String, Object> question = new HashMap<>();
+    //             question.put("questionNo", questionRs.getInt("questionNo"));
+    //             question.put("question", questionRs.getString("question"));
+    //             question.put("answer", questionRs.getString("answer"));
+    //             question.put("marks", questionRs.getInt("marksAwarded"));
+    //             questions.add(question);
+    //         }
+    //     }
+    //     return questions;
+    // }
 //checking if the participant has exceeded 3 attempts
     private boolean hasExceededAttempts(int challengeNo) throws SQLException {
         String checkAttemptsSql = "SELECT COUNT(*) as attempts FROM Attempt WHERE challengeNo = ? AND participantID = ?";

@@ -6,6 +6,8 @@ import java.util.Arrays;
 import java.util.Scanner;
 
 public class Client {
+    String color="\u001B[33m";
+    String enter="\u001B[32m";
     private Socket soc;
     private PrintWriter out;
     private BufferedReader in;
@@ -21,7 +23,7 @@ public class Client {
 private String sendMessage(String message) throws IOException {
     System.out.println("Sending message: " + message);
     out.println(message);
-    out.flush();
+    //out.flush();
     
     StringBuilder response = new StringBuilder();
     String line;
@@ -38,7 +40,7 @@ private String sendMessage(String message) throws IOException {
         }
         
         if (System.currentTimeMillis() - startTime > timeout) {
-            System.out.println("Response timeout");
+            //System.out.println("Response timeout");
             break;
         } try {
             Thread.sleep(100); // Small delay to prevent busy waiting
@@ -62,6 +64,7 @@ private String sendMessage(String message) throws IOException {
     public void run() {
         try {
             while (true) {
+                System.out.println(color);
                 System.out.println("Welcome to the International Education System Mathematics Competition System");
                 System.out.println("\tMenu");
                 System.out.println(" Login: login username password");
@@ -73,6 +76,7 @@ private String sendMessage(String message) throws IOException {
                 System.out.println(" Confirm Applicant (for school representatives only): confirm yes/no username");
                 System.out.println(" Exit: exit");
                 System.out.println(" Enter command to continue ");
+                System.out.println(enter);
                 System.out.print(">>> ");
                 //accepts user input from the keyboard
                 String command = scanner.nextLine().trim();
