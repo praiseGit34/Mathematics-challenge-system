@@ -1,0 +1,8 @@
+{
+    "java.project.referencedLibraries": [
+        "lib/**/*.jar",
+        "c:\\Users\\HP\\Desktop\\mysql-connector-j-9.0.0.jar",
+        "c:\\Users\\HP\\Desktop\\activation.jar",
+        "c:\\Users\\HP\\Desktop\\javax.mail.jar"
+    ]
+}

@@ -18,11 +18,40 @@ public class Client {
         scanner = new Scanner(System.in);
     }
 //sending the commands to the server through the socket
-    public String sendMessage(String msg) throws IOException {
-        out.println(msg);
-        return in.readLine();
+private String sendMessage(String message) throws IOException {
+    System.out.println("Sending message: " + message);
+    out.println(message);
+    out.flush();
+    
+    StringBuilder response = new StringBuilder();
+    String line;
+    long startTime = System.currentTimeMillis();
+    long timeout =1000; 
+    
+    while (true) {
+        if (in.ready()) {
+            line = in.readLine();
+            if (line.equals("END_OF_MESSAGE")) {
+                break;
+            }
+            response.append(line).append("\n");
+        }
+        
+        if (System.currentTimeMillis() - startTime > timeout) {
+            System.out.println("Response timeout");
+            break;
+        } try {
+            Thread.sleep(100); // Small delay to prevent busy waiting
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
-//closing all the classes
+    
+    String result = response.toString().trim();
+    System.out.println("Received response: " + result);
+    return result;
+}
+    //closing all the classes
     public void stopConnection() throws IOException {
         in.close();
         out.close();
@@ -209,7 +238,6 @@ public class Client {
         String response = sendMessage("VIEW_APPLICANTS");
         System.out.println(response);
     }
-
     private void confirmApplicant(String decision, String username) throws IOException {
         String response = sendMessage("CONFIRM_APPLICANT " + decision + " " + username);
         System.out.println(response);

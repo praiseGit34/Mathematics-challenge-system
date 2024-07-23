@@ -19,7 +19,7 @@ public class Server {
             Class.forName("com.mysql.cj.jdbc.Driver");
             
             // Establish the database connection
-            String url = "jdbc:mysql://localhost:3306/mathematics";
+            String url = "jdbc:mysql://localhost:3306/challenge";
             String user = "root";
             String password = "";
             con = DriverManager.getConnection(url, user, password);
