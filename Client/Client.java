@@ -198,18 +198,34 @@ private String sendMessage(String message) throws IOException {
         }
     }
 
-    private void attemptChallenge(String challengeNumber) throws IOException {
+    private void attemptChallenge(String challengeNumber) {
         try {
-            String response = sendMessage("ATTEMPT_CHALLENGE " + challengeNumber);
-            System.out.println(response);
-            String startPrompt = in.readLine();
-            System.out.println(startPrompt);
-    
-            System.out.println("Press Enter to start the challenge...");
-            scanner.nextLine(); // Wait for user to press Enter
-            out.println("start");
+            // Send the attempt challenge request
+            out.println("ATTEMPT_CHALLENGE " + challengeNumber);
             out.flush();
     
+            // Read the server's response
+            String response = in.readLine();
+            System.out.println("Server response: " + response);
+    
+            if (response.contains("Challenge is not open or does not exist")) {
+                System.out.println("Challenge is not available. Returning to main menu.");
+                return;
+            }
+    
+            if (!response.equals("CHALLENGE_READY")) {
+                System.out.println("Unexpected response from server. Aborting challenge attempt.");
+                return;
+            }
+    
+            System.out.println("Challenge is ready. Press Enter to start...");
+            scanner.nextLine(); // Wait for user to press Enter
+    
+            // Send start signal to server
+            out.println("START");
+            out.flush();
+    
+            // Process challenge questions
             while (true) {
                 String line = in.readLine();
                 if (line == null || line.equals("END_OF_CHALLENGE")) {
@@ -230,14 +246,15 @@ private String sendMessage(String message) throws IOException {
                 }
             }
     
+            // Read and display final result
             String finalResult = in.readLine();
             System.out.println(finalResult);
+    
         } catch (IOException e) {
             System.err.println("Error during challenge attempt: " + e.getMessage());
             e.printStackTrace();
         }
     }
-
     private void viewApplicants() throws IOException {
         String response = sendMessage("VIEW_APPLICANTS");
         System.out.println(response);

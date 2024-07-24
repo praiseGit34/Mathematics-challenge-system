@@ -44,6 +44,9 @@ public class ClientHandler implements Runnable {
             }
         } catch (IOException | SQLException e) {
             e.printStackTrace();
+        } catch (ParseException e) {
+            // TODO Auto-generated catch block
+            e.printStackTrace();
         } finally {
             closeResources();
         }
@@ -65,7 +68,7 @@ public class ClientHandler implements Runnable {
         }
     }
 //method for handling all the commands from the client
-    private String processRequest(String request) throws SQLException {
+    private String processRequest(String request) throws SQLException, ParseException {
         String[] partofCommand = request.split(" ");
         String action = partofCommand[0].toUpperCase();
         switch (action) {
@@ -102,7 +105,7 @@ public class ClientHandler implements Runnable {
         return action;
     }
 //method for handling register command
-    private String registerUser(String[] parts) throws SQLException {
+    private String registerUser(String[] parts) throws SQLException, ParseException {
         System.out.println("Received registration request. Parts: " + Arrays.toString(parts));
         if (parts.length != 8) {  // REGISTER + 7 args
             return "Invalid registration format";
@@ -150,21 +153,44 @@ public class ClientHandler implements Runnable {
             pstmt.setDate(8, sqlDate);
             
             int affectedRows = pstmt.executeUpdate();
-            if (affectedRows > 0) {
-                System.out.println("User registered successfully");
-                sendParticipantEmail(email,username);
-                sendEmail(email, password, sql);
-                return "User registered successfully. Your password is: " + password;
-               } else {
-                System.out.println("Failed to register user");
-                return "Failed to register user";
+
+if (affectedRows > 0) {
+    System.out.println("User registered successfully");
+    sendParticipantEmail(email, username);
+    
+    // Use a new PreparedStatement for the SELECT query
+    try (PreparedStatement psSelect = con.prepareStatement("SELECT emailAddress FROM schools WHERE schoolRegNo = ?")) {
+        psSelect.setInt(1, schoolRegNo);
+        try (ResultSet rs = psSelect.executeQuery()) {
+            if (rs.next()) {
+                String emailAddress = rs.getString("emailAddress");
+                // In your registerUser method
+                String participantInfo = "Username: " + username + "\n"
+                + "Name: " + firstName + " " + lastName + "\n"
+                + "Email: " + email + "\n"
+                + "Date of Birth: " + dateOfBirth + "\n"
+                + "School Reg No: " + schoolRegNo;
+
+            sendEmail(emailAddress, participantInfo);
+                // Now use this emailAddress to send your email
+               
+            } else {
+                // Handle case where no email address was found
+                System.out.println("No email address found for the given school registration number.");
             }
-        } catch (SQLException | ParseException e) {
-            System.out.println("Error registering user: " + e.getMessage());
-            e.printStackTrace();
-            return "Error registering user: " + e.getMessage();
         }
+    } catch (SQLException e) {
+        System.out.println("Error retrieving school email: " + e.getMessage());
+        // You might want to log this error, but not necessarily return it to the user
     }
+    
+    return "User registered successfully. Your password is: " + password;
+} else {
+    System.out.println("Failed to register user");
+    return "Failed to register user";}}
+
+    }
+    
 //method to send a success email for registration
     private void sendParticipantEmail(String email,String username) {
         String host = "smtp.gmail.com";
@@ -406,27 +432,29 @@ private String attemptChallenge(String challengeNumber) {
             
             String challengeName = rs.getString("challengeName");
             String attemptDurationStr = rs.getString("Duration");
-            
             LocalTime Duration = LocalTime.parse(attemptDurationStr, DateTimeFormatter.ofPattern("HH:mm:ss"));
             long durationInSeconds = Duration.toSecondOfDay();
 
             if (hasExceededAttempts(challengeNo)) {
                 return "You have already attempted this challenge 3 times.";
             }
+
+            // Fetch questions
             List<Map<String, Object>> questions = fetchRandomQuestions(challengeNo);
             if (questions.isEmpty()) {
                 return "No questions available for this challenge.";
             }
-            String description = String.format("Challenge: %s\nDuration: %s",
-                    challengeName, Duration.toString());
-            out.println(description);
+
+            // Send CHALLENGE_READY to client
+            out.println("CHALLENGE_READY");
             out.flush();
-            
+
+            // Wait for START signal from client
             String startResponse = in.readLine();
-            if (!startResponse.equalsIgnoreCase("start")) {
+            if (!startResponse.equalsIgnoreCase("START")) {
                 return "Challenge cancelled.";
             }
-            
+
             int attemptID = storeAttempt(challengeNo);
             return conductChallenge(questions, durationInSeconds, attemptID);
         }
@@ -438,73 +466,68 @@ private String attemptChallenge(String challengeNumber) {
 }
 
 private List<Map<String, Object>> fetchRandomQuestions(int challengeNo) throws SQLException {
+    String questionSql = "SELECT q.questionid, q.question, a.answer, a.mark FROM Question q JOIN Answer a ON q.questionid = a.questionid WHERE q.challenge_id =? ORDER BY RAND() LIMIT 10";
     List<Map<String, Object>> questions = new ArrayList<>();
-    String sql = "SELECT q.questionNo, q.question, q.marks " +
-                 "FROM Questions q " +
-                 "JOIN Challenges cq ON q.questionNo = cq.numOfQuestions " +
-                 "WHERE cq.challengeNo = ? " +
-                 "ORDER BY RAND() " +
-                 "LIMIT 10";
-    try (PreparedStatement pstmt = con.prepareStatement(sql)) {
-        pstmt.setInt(1, challengeNo);
-        ResultSet rs = pstmt.executeQuery();
-        while (rs.next()) {
+    try (PreparedStatement questionStmt = con.prepareStatement(questionSql)) {
+        questionStmt.setInt(1, challengeNo);
+        ResultSet questionRs = questionStmt.executeQuery();
+        while (questionRs.next()) {
             Map<String, Object> question = new HashMap<>();
-            question.put("questionNo", rs.getInt("questionNo"));
-            question.put("question", rs.getString("question"));
-            question.put("marks", rs.getInt("marks"));
+            question.put("questionNo", questionRs.getInt("questionNo"));
+            question.put("question", questionRs.getString("question"));
+            question.put("answer", questionRs.getString("answer"));
+            question.put("mark", questionRs.getInt("mark"));
             questions.add(question);
         }
     }
     return questions;
 }
-    private String conductChallenge(List<Map<String, Object>> questions, long durationInSeconds, int attemptID) throws IOException, SQLException {
-        int totalScore = 0;
-        int totalMarks = 0;
-        long startTime = System.currentTimeMillis();
-        long endTime = startTime + (durationInSeconds * 1000);
-    
-        for (int i = 0; i < questions.size(); i++) {
-            Map<String, Object> question = questions.get(i);
-            long currentTime = System.currentTimeMillis();
-            if (currentTime >= endTime) {
-                out.println("Time's up!");
-                out.flush();
-                break;
-            }
-    
-            long remainingTime = endTime - currentTime;
-            out.println(String.format("Question %d/%d", i + 1, questions.size()));
-            out.println(question.get("question"));
-            out.println(String.format("Remaining time: %s", formatDuration(remainingTime)));
-            out.println("Enter your answer or '-' to skip:");
+private String conductChallenge(List<Map<String, Object>> questions, long durationInSeconds, int attemptID) throws IOException, SQLException {
+    int totalScore = 0;
+    int totalMarks = 0;
+    long startTime = System.currentTimeMillis();
+    long endTime = startTime + (durationInSeconds * 1000);
+
+    for (int i = 0; i < questions.size(); i++) {
+        Map<String, Object> question = questions.get(i);
+        long currentTime = System.currentTimeMillis();
+        if (currentTime >= endTime) {
+            out.println("oh sorry! time is done");
             out.flush();
-    
-            String userAnswer = readLineWithTimeout(remainingTime);
-            if (userAnswer == null) {
-                out.println("Time's up for this question!");
-                out.flush();
-                userAnswer = "-";
-            }
-    
-            int questionNo = (int) question.get("questionNo");
-            int score = evaluateAnswer(questionNo, userAnswer);
-            storeAttemptQuestion(attemptID, questionNo, score, userAnswer);
-            totalScore += score;
-            totalMarks += (int) question.get("marks");
-    
-            out.println("Answer recorded. Moving to next question...");
-            out.flush();
+            break;
         }
-    
-        out.println("END_OF_CHALLENGE");
+
+        long remainingTime = endTime - currentTime;
+        out.println("QUESTION: " + question.get("question"));
+        out.println(String.format("Remaining time: %s", formatDuration(remainingTime)));
+        out.println("Enter your answer:");
         out.flush();
-    
-        double percentageMark = (double) totalScore / totalMarks * 100;
-        saveAttemptResult(attemptID, startTime, totalScore, percentageMark);
-    
-        return String.format("Challenge completed. Your score: %d (%.2f%%)", totalScore, percentageMark);
+
+        String userAnswer = readLineWithTimeout(remainingTime);
+        if (userAnswer == null) {
+            out.println("Time's up for this question!");
+            out.flush();
+            userAnswer = "-";
+        }
+
+        int questionNo = (int) question.get("questionNo");
+        int score = evaluateAnswer(questionNo, userAnswer);
+        storeAttemptQuestion(attemptID, questionNo, score, userAnswer);
+        totalScore += score;
+        totalMarks += (int) question.get("mark");
+
+        out.println("Answer recorded.");
+        out.flush();
     }
+
+    out.println("END_OF_CHALLENGE");
+    out.flush();
+
+    double percentageMark = (double) totalScore / totalMarks * 100;
+    saveAttemptResult(attemptID, startTime, totalScore, percentageMark);
+
+    return String.format("Challenge completed. Your score: %d (%.2f%%)", totalScore, percentageMark);
+}
 
     private void saveAttemptResult(int attemptID, long startTime, int totalScore, double percentageMark) throws SQLException {
         String saveAttemptSql = "UPDATE Attempt SET endTime = ?, score = ?, percentageMark = ? WHERE attemptID = ?";
@@ -598,23 +621,6 @@ private List<Map<String, Object>> fetchRandomQuestions(int challengeNo) throws S
         }
     }
 
-    // private List<Map<String, Object>> fetchRandomQuestions(int challengeNo) throws SQLException {
-    //     String questionSql = "SELECT q.questionNo, q.question, a.answer, a.marksAwarded FROM Question q JOIN Answer a ON q.questionNo = a.questionNo WHERE q.questionBankID = (SELECT questionBankID FROM Challenge WHERE challengeNo = ?) ORDER BY RAND() LIMIT 10";
-    //     List<Map<String, Object>> questions = new ArrayList<>();
-    //     try (PreparedStatement questionStmt = con.prepareStatement(questionSql)) {
-    //         questionStmt.setInt(1, challengeNo);
-    //         ResultSet questionRs = questionStmt.executeQuery();
-    //         while (questionRs.next()) {
-    //             Map<String, Object> question = new HashMap<>();
-    //             question.put("questionNo", questionRs.getInt("questionNo"));
-    //             question.put("question", questionRs.getString("question"));
-    //             question.put("answer", questionRs.getString("answer"));
-    //             question.put("marks", questionRs.getInt("marksAwarded"));
-    //             questions.add(question);
-    //         }
-    //     }
-    //     return questions;
-    // }
 //checking if the participant has exceeded 3 attempts
     private boolean hasExceededAttempts(int challengeNo) throws SQLException {
         String checkAttemptsSql = "SELECT COUNT(*) as attempts FROM Attempt WHERE challengeNo = ? AND participantID = ?";
@@ -647,7 +653,7 @@ private List<Map<String, Object>> fetchRandomQuestions(int challengeNo) throws S
                 }
                 // Insert into target table
                 String insertSql;
-                String email ="select email from applicants where username=?";
+                //String email ="select email from applicants where username=?";
                 if (isApproved) {
                     insertSql = "INSERT INTO Participants ( firstName, lastName, email, dateOfBirth, schoolRegNo, userName, imagePath, password) VALUES ( ?, ?, ?, ?, ?, ?, ?, ?)";  
                 } else {
@@ -663,7 +669,10 @@ private List<Map<String, Object>> fetchRandomQuestions(int challengeNo) throws S
                         insertStmt.setString(6, rs.getString("username"));
                         insertStmt.setString(7, rs.getString("imagePath"));
                         insertStmt.setString(8, rs.getString("password"));
-                        sendAcceptanceEmail(email,"applicant accepted","your registration has been accepted please you can continue with the challenges");
+                       // String email="select email from participants where username=?";
+                       String email = rs.getString("email");
+                       String userName = rs.getString("username");
+                       sendAcceptanceEmail(email,userName);
                     
                     } else {
                         
@@ -676,7 +685,10 @@ private List<Map<String, Object>> fetchRandomQuestions(int challengeNo) throws S
                         insertStmt.setString(6, rs.getString("lastName"));
                         insertStmt.setString(7, rs.getString("password"));
                         insertStmt.setDate(8, rs.getDate("dateOfBirth"));
-                        sendRejectedEmail(email,"applicant rejected","Your registration has been rejected");
+                        //String email ="select email from rejected where username=?";
+                        String email = rs.getString("email");
+                        String userName = rs.getString("username");
+                        sendRejectedEmail(email,username);
                     }
                     insertStmt.executeUpdate();
                 }
@@ -706,104 +718,10 @@ private List<Map<String, Object>> fetchRandomQuestions(int challengeNo) throws S
         }
     }
     //send an email to person who has been rejected
-    private void sendRejectedEmail(String username, String subject, String body) {
+    private void sendRejectedEmail(String email,String username) {
         String host = "smtp.gmail.com";
         String from = "mathchallengesystem@gmail.com";
         String password = "aibj jdgj fvpl cfwb";   // Use the App Password generated earlier
-    
-        Properties properties = new Properties();
-        properties.put("mail.smtp.host", host);
-        properties.put("mail.smtp.port", "587");
-        properties.put("mail.smtp.auth", "true");
-        properties.put("mail.smtp.starttls.enable", "true");
-    
-        Session session = Session.getInstance(properties, new javax.mail.Authenticator() {
-            protected PasswordAuthentication getPasswordAuthentication() {
-                return new PasswordAuthentication(from, password);
-            }
-        });
-    
-        try {
-            String email = getApplicantEmail(username);
-            if (email != null && !email.isEmpty()) {
-                Message message = new MimeMessage(session);
-                message.setFrom(new InternetAddress(from));
-                message.setRecipients(Message.RecipientType.TO, InternetAddress.parse(email));
-                message.setSubject(subject);
-                message.setText(body);
-    
-                Transport.send(message);
-                System.out.println("Rejection email sent successfully to " + email);
-            } else {
-                System.out.println("Failed to send rejection email: No email found for username " + username);
-            }
-        } catch (MessagingException e) {
-            System.out.println("Failed to send rejection email: " + e.getMessage());
-            e.printStackTrace();
-        }
-    }
-    //fetching applicant email from the database
-    private String getApplicantEmail(String username) {
-        String sql = "SELECT email FROM Applicants WHERE userName = ?";
-        try (PreparedStatement pstmt = con.prepareStatement(sql)) {
-            pstmt.setString(1, username);
-            ResultSet rs = pstmt.executeQuery();
-            if (rs.next()) {
-                return rs.getString("email");
-            }
-        } catch (SQLException e) {
-            System.out.println("Error retrieving applicant email: " + e.getMessage());
-            e.printStackTrace();
-        }
-        return null;
-    }
-    //sending an acceptance email to the confirmed yes participant
-    private void sendAcceptanceEmail(String username, String subject, String body) {
-        String host = "smtp.gmail.com";
-        String from = "mathchallengesystem@gmail.com";
-        String password = "aibj jdgj fvpl cfwb";   // Use the App Password generated earlier
-    
-        Properties properties = new Properties();
-        properties.put("mail.smtp.host", host);
-        properties.put("mail.smtp.port", "587");
-        properties.put("mail.smtp.auth", "true");
-        properties.put("mail.smtp.starttls.enable", "true");
-    
-        Session session = Session.getInstance(properties, new javax.mail.Authenticator() {
-            protected PasswordAuthentication getPasswordAuthentication() {
-                return new PasswordAuthentication(from, password);
-            }
-        });
-    
-        try {
-            // First, get the email of the accepted applicant from the database
-            String email = getApplicantEmail(username);
-            
-            if (email != null && !email.isEmpty()) {
-                Message message = new MimeMessage(session);
-                message.setFrom(new InternetAddress(from));
-                message.setRecipients(Message.RecipientType.TO, InternetAddress.parse(email));
-                message.setSubject(subject);
-                message.setText(body);
-    
-                Transport.send(message);
-                System.out.println("Acceptance email sent successfully to " + email);
-            } else {
-                System.out.println("Failed to send acceptance email: No email found for username " + username);
-            }
-        } catch (MessagingException e) {
-            System.out.println("Failed to send acceptance email: " + e.getMessage());
-            e.printStackTrace();
-        }
-    }
-    
-   
-// email to send an email to a representative to inform about people that registered under their school
-    private void sendEmail(String emailAddress, String body, String sql) {
-        String host = "smtp.gmail.com";
-        String from = "mathchallengesystem@gmail.com";
-        String password = "aibj jdgj fvpl cfwb";   // Use the App Password generated earlier
-        emailAddress="Select emailAddress from schools where schoolRegNo=?";
     
         Properties properties = new Properties();
         properties.put("mail.smtp.host", host);
@@ -819,16 +737,85 @@ private List<Map<String, Object>> fetchRandomQuestions(int challengeNo) throws S
         try {
             Message message = new MimeMessage(session);
             message.setFrom(new InternetAddress(from));
-            message.setRecipients(Message.RecipientType.TO, InternetAddress.parse(emailAddress));
-            message.setSubject("Dear schoolRepresentative");
-            message.setText("hope this email finds you well\n kindly confrim this participant who registered under your school");
+            message.setRecipients(Message.RecipientType.TO, InternetAddress.parse(email));
+            message.setSubject("Dear "+username);
+            message.setText("OOPS! you have been rejected please try again later");
     
             Transport.send(message);
-            System.out.println("Email sent successfully to " + emailAddress);
+            System.out.println("Email sent successfully to " + email);
         } catch (MessagingException e) {
             throw new RuntimeException(e);
         }
     }
+    //sending an acceptance email to the confirmed yes participant
+    private void sendAcceptanceEmail(String email,String username) {
+        String host = "smtp.gmail.com";
+        String from = "mathchallengesystem@gmail.com";
+        String password = "aibj jdgj fvpl cfwb";   // Use the App Password generated earlier
+    
+        Properties properties = new Properties();
+        properties.put("mail.smtp.host", host);
+        properties.put("mail.smtp.port", "587");
+        properties.put("mail.smtp.auth", "true");
+        properties.put("mail.smtp.starttls.enable", "true");
+    
+        Session session = Session.getInstance(properties, new javax.mail.Authenticator() {
+            protected PasswordAuthentication getPasswordAuthentication() {
+                return new PasswordAuthentication(from, password);
+            }
+        });
+        try {
+            Message message = new MimeMessage(session);
+            message.setFrom(new InternetAddress(from));
+            message.setRecipients(Message.RecipientType.TO, InternetAddress.parse(email));
+            message.setSubject("Dear "+username);
+            message.setText("congratulations you have been accepted please go ahead and attempt the challenges");
+    
+            Transport.send(message);
+            System.out.println("Email sent successfully to " + email);
+        } catch (MessagingException e) {
+            throw new RuntimeException(e);
+        }
+    }
+    
+   
+private void sendEmail(String emailAddress,String participantInfo) {
+    String host = "smtp.gmail.com";
+    String from = "mathchallengesystem@gmail.com";
+    String password = "aibj jdgj fvpl cfwb";   // Use the App Password generated earlier
+
+    // Remove this line:
+    // emailAddress="Select emailAddress from schools where schoolRegNo=?";
+
+    Properties properties = new Properties();
+    properties.put("mail.smtp.host", host);
+    properties.put("mail.smtp.port", "587");
+    properties.put("mail.smtp.auth", "true");
+    properties.put("mail.smtp.starttls.enable", "true");
+
+    Session session = Session.getInstance(properties, new javax.mail.Authenticator() {
+        protected PasswordAuthentication getPasswordAuthentication() {
+            return new PasswordAuthentication(from, password);
+        }
+    });
+
+    try {
+        Message message = new MimeMessage(session);
+        message.setFrom(new InternetAddress(from));
+        message.setRecipients(Message.RecipientType.TO, InternetAddress.parse(emailAddress));
+        message.setSubject("Dear School Representative");
+        String emailBody = "Hope this email finds you well\n"
+        + "Kindly confirm the participant who registered under your school:\n\n"
+        + participantInfo;
+
+message.setText(emailBody);
+       
+        Transport.send(message);
+        System.out.println("Email sent successfully to " + emailAddress);
+    } catch (MessagingException e) {
+        throw new RuntimeException(e);
+    }
+}
     //method for handling the view applicants command
     private String viewApplicants() {
         if (!isSchoolRepresentative) {
