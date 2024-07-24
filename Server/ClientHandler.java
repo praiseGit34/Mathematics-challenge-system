@@ -83,7 +83,7 @@ public class ClientHandler implements Runnable {
             case "VIEW_CHALLENGES":
                 return viewChallenges();
             case "ATTEMPT_CHALLENGE":
-                return attemptChallenge(partofCommand[1])
+                return attemptChallenge(partofCommand[1]);
             case "VIEW_APPLICANTS":
             String applicantsList = viewApplicants();
             out.println(applicantsList);
