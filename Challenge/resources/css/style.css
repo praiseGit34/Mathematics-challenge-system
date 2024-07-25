@@ -1,0 +1,20 @@
+.trusted {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+}
+.trusted h1 {
+    font-size: 2em;
+}
+.trusted-banners {
+    display: flex;
+    list-style-type: none;
+    gap: 52px;
+}
+.banner {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    align-items: center;
+}
