@@ -9,14 +9,9 @@ import java.text.ParseException;
 import java.time.*;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
-import javax.activation.*;
-import javax.activation.DataHandler;
 import javax.mail.*;
 import javax.mail.PasswordAuthentication;
 import javax.mail.internet.*;
-import javax.mail.util.ByteArrayDataSource;
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
 
 public class ClientHandler implements Runnable {
     private final Socket clientSocket;
@@ -403,7 +398,7 @@ public class ClientHandler implements Runnable {
         }
     }
     //method to handle attempt challenge command
-   private String attemptChallenge(String challengeNumber) {
+    private String attemptChallenge(String challengeNumber) {
         if (!isAuthenticated() || isSchoolRepresentative) {
             return "You must be logged in as a participant to attempt a challenge.";
         }
@@ -415,6 +410,7 @@ public class ClientHandler implements Runnable {
                 pstmt.setInt(1, challengeNo);
                 ResultSet rs = pstmt.executeQuery();
                 if (!rs.next()) {
+                    // Check if the challenge exists at all
                     String checkExistsSql = "SELECT * FROM Challenges WHERE challengeNo = ?";
                     try (PreparedStatement existsStmt = con.prepareStatement(checkExistsSql)) {
                         existsStmt.setInt(1, challengeNo);
@@ -465,8 +461,7 @@ public class ClientHandler implements Runnable {
         long startTime = System.currentTimeMillis();
         long endTime = startTime + (durationInSeconds * 1000);
         StringBuilder report = new StringBuilder();
-        List<Map<String, Object>> answeredQuestions = new ArrayList<>();
-
+    
         for (int i = 0; i < questions.size(); i++) {
             Map<String, Object> question = questions.get(i);
             long currentTime = System.currentTimeMillis();
@@ -475,16 +470,17 @@ public class ClientHandler implements Runnable {
                 out.println("Time's up!");
                 break;
             }
-
-            long remainingTime = (endTime - currentTime) / 1000;
+    
+            long remainingTime = (endTime - currentTime) / 1000; // remaining time in seconds
             int remainingQuestions = totalQuestions - i;
-
+    
             out.println("Remaining questions: " + remainingQuestions + ", Remaining time: " + remainingTime + " seconds");
             out.println("Question: " + question.get("question"));
             out.flush();
-
+    
             String userAnswer = in.readLine();
             
+            // Safely get the mark, defaulting to 1 if it's missing or null
             int mark = 1;
             if (question.containsKey("mark")) {
                 Object markObj = question.get("mark");
@@ -502,120 +498,27 @@ public class ClientHandler implements Runnable {
             totalPossibleScore += mark;
             int score = scoreAnswer(userAnswer, (String) question.get("answer"), mark);
             totalScore += score;
-
-            long questionTime = (System.currentTimeMillis() - currentTime) / 1000;
+    
+            long questionTime = (System.currentTimeMillis() - currentTime) / 1000; // time taken for this question in seconds
             report.append("Question ").append(i + 1).append(": Score = ").append(score)
                   .append("/").append(mark).append(", Time taken = ").append(questionTime).append(" seconds\n");
-
-            Map<String, Object> answeredQuestion = new HashMap<>(question);
-            answeredQuestion.put("userAnswer", userAnswer);
-            answeredQuestion.put("score", score);
-            answeredQuestions.add(answeredQuestion);
         }
-
-        long totalTime = (System.currentTimeMillis() - startTime) / 1000;
+    
+        long totalTime = (System.currentTimeMillis() - startTime) / 1000; // total time in seconds
         report.append("Total Score: ").append(totalScore).append("/").append(totalPossibleScore).append("\n");
         report.append("Total Time: ").append(totalTime).append(" seconds");
-
+    
         out.println("END_OF_CHALLENGE");
         out.println(report.toString());
         out.flush();
-
+    
+        // Calculate percentage mark
         double percentageMark = totalPossibleScore > 0 ? (double) totalScore / totalPossibleScore * 100 : 0;
-
+    
+        // Store the final result in the database
         storeAttemptResult(attemptNo, totalScore, totalTime, percentageMark);
-
-        try {
-            byte[] pdfBytes = generatePDF(answeredQuestions, totalScore, totalPossibleScore, totalTime);
-            sendEmailWithPDF(pdfBytes);
-        } catch (Exception e) {
-            System.err.println("Error generating PDF or sending email: " + e.getMessage());
-            e.printStackTrace();
-        }
-
+    
         return report.toString();
-    }
-
-    // private byte[] generatePDF(List<Map<String, Object>> answeredQuestions, int totalScore, int totalPossibleScore, long totalTime) throws DocumentException, IOException {
-    //     ByteArrayOutputStream baos = new ByteArrayOutputStream();
-    //     Document document = new Document();
-    //     PdfWriter.getInstance(document, baos);
-
-    //     document.open();
-    //     document.add(new Paragraph("Challenge Results"));
-    //     document.add(new Paragraph("Total Score: " + totalScore + "/" + totalPossibleScore));
-    //     document.add(new Paragraph("Total Time: " + totalTime + " seconds"));
-    //     document.add(new Paragraph("\n"));
-
-    //     for (int i = 0; i < answeredQuestions.size(); i++) {
-    //         Map<String, Object> question = answeredQuestions.get(i);
-    //         document.add(new Paragraph("Question " + (i + 1) + ": " + question.get("question")));
-    //         document.add(new Paragraph("Your Answer: " + question.get("userAnswer")));
-    //         document.add(new Paragraph("Correct Answer: " + question.get("answer")));
-    //         document.add(new Paragraph("Score: " + question.get("score")));
-    //         document.add(new Paragraph("\n"));
-    //     }
-
-    //     document.close();
-    //     return baos.toByteArray();
-    // }
-
-    private void sendEmailWithPDF(byte[] pdfBytes) throws MessagingException, SQLException {
-        String host = "smtp.gmail.com";
-        String from = "mathchallengesystem@gmail.com";
-        String password = "aibj jdgj fvpl cfwb";
-
-        Properties properties = new Properties();
-        properties.put("mail.smtp.host", host);
-        properties.put("mail.smtp.port", "587");
-        properties.put("mail.smtp.auth", "true");
-        properties.put("mail.smtp.starttls.enable", "true");
-
-        Session session = Session.getInstance(properties, new javax.mail.Authenticator() {
-            protected PasswordAuthentication getPasswordAuthentication() {
-                return new PasswordAuthentication(from, password);
-            }
-        });
-
-        try {
-            Message message = new MimeMessage(session);
-            message.setFrom(new InternetAddress(from));
-            message.setRecipients(Message.RecipientType.TO, InternetAddress.parse(getParticipantEmail()));
-            message.setSubject("Your Challenge Results");
-
-            Multipart multipart = new MimeMultipart();
-
-            MimeBodyPart textPart = new MimeBodyPart();
-            textPart.setText("Please find attached your challenge results.");
-
-            MimeBodyPart pdfPart = new MimeBodyPart();
-            DataSource dataSource = new ByteArrayDataSource(pdfBytes, "application/pdf");
-            pdfPart.setDataHandler(new DataHandler(dataSource));
-            pdfPart.setFileName("challenge_results.pdf");
-
-            multipart.addBodyPart(textPart);
-            multipart.addBodyPart(pdfPart);
-
-            message.setContent(multipart);
-
-            Transport.send(message);
-            System.out.println("Email sent successfully with PDF attachment.");
-        } catch (MessagingException e) {
-            throw new RuntimeException(e);
-        }
-    }
-
-    private String getParticipantEmail() throws SQLException {
-        String sql = "SELECT email FROM Participants WHERE id = ?";
-        try (PreparedStatement pstmt = con.prepareStatement(sql)) {
-            pstmt.setInt(1, participantID);
-            ResultSet rs = pstmt.executeQuery();
-            if (rs.next()) {
-                return rs.getString("email");
-            } else {
-                throw new SQLException("Participant email not found");
-            }
-        }
     }
     private int scoreAnswer(String userAnswer, String correctAnswer, int maxMarks) {
     if (userAnswer.equals("-") || userAnswer.equals("")) {
