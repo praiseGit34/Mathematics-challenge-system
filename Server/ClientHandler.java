@@ -9,9 +9,14 @@ import java.text.ParseException;
 import java.time.*;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
+import javax.activation.*;
+import javax.activation.DataHandler;
 import javax.mail.*;
 import javax.mail.PasswordAuthentication;
 import javax.mail.internet.*;
+import javax.mail.util.ByteArrayDataSource;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 
 public class ClientHandler implements Runnable {
     private final Socket clientSocket;
@@ -398,105 +403,220 @@ public class ClientHandler implements Runnable {
         }
     }
     //method to handle attempt challenge command
-    private String attemptChallenge(String challengeNumber) {
-    if (!isAuthenticated() || isSchoolRepresentative) {
-        return "You must be logged in as a participant to attempt a challenge.";
+   private String attemptChallenge(String challengeNumber) {
+        if (!isAuthenticated() || isSchoolRepresentative) {
+            return "You must be logged in as a participant to attempt a challenge.";
+        }
+        try {
+            int challengeNo = Integer.parseInt(challengeNumber);
+           
+            String checkOpenSql = "SELECT * FROM Challenges WHERE challengeNo = ? AND startDate <= CURDATE() AND endDate >= CURDATE()";
+            try (PreparedStatement pstmt = con.prepareStatement(checkOpenSql)) {
+                pstmt.setInt(1, challengeNo);
+                ResultSet rs = pstmt.executeQuery();
+                if (!rs.next()) {
+                    String checkExistsSql = "SELECT * FROM Challenges WHERE challengeNo = ?";
+                    try (PreparedStatement existsStmt = con.prepareStatement(checkExistsSql)) {
+                        existsStmt.setInt(1, challengeNo);
+                        ResultSet existsRs = existsStmt.executeQuery();
+                        if (!existsRs.next()) {
+                            return "Challenge does not exist.";
+                        } else {
+                            return "Challenge exists but is not currently open.";
+                        }
+                    }
+                }
+               
+                String challengeName = rs.getString("challengeName");
+                int durationMinutes = rs.getInt("Duration");
+                long durationInSeconds = durationMinutes * 60L;
+                
+                if (hasExceededAttempts(challengeNo)) {
+                    return "You have already attempted this challenge 3 times.";
+                }
+                
+                List<Map<String, Object>> questions = fetchRandomQuestions(challengeNo);
+                if (questions.isEmpty()) {
+                    return "No questions available for this challenge.";
+                }
+                
+                out.println("CHALLENGE_READY");
+                out.flush();
+                
+                String startResponse = in.readLine();
+                if (!startResponse.equalsIgnoreCase("START")) {
+                    return "Challenge cancelled.";
+                }
+                
+                int attemptID = storeAttempt(challengeNo);
+                return conductChallenge(questions, durationInSeconds, attemptID);
+            }
+        } catch (SQLException | IOException e) {
+            System.err.println("Error during challenge attempt: " + e.getMessage());
+            e.printStackTrace();
+            return "Error during challenge attempt: " + e.getMessage();
+        }
     }
-    try {
-        int challengeNo = Integer.parseInt(challengeNumber);
-       
-        String checkOpenSql = "SELECT * FROM Challenges WHERE challengeNo = ? AND startDate <= CURDATE() AND endDate >= CURDATE()";
-        try (PreparedStatement pstmt = con.prepareStatement(checkOpenSql)) {
-            pstmt.setInt(1, challengeNo);
-            ResultSet rs = pstmt.executeQuery();
-            if (!rs.next()) {
-                // Check if the challenge exists at all
-                String checkExistsSql = "SELECT * FROM Challenges WHERE challengeNo = ?";
-                try (PreparedStatement existsStmt = con.prepareStatement(checkExistsSql)) {
-                    existsStmt.setInt(1, challengeNo);
-                    ResultSet existsRs = existsStmt.executeQuery();
-                    if (!existsRs.next()) {
-                        return "Challenge does not exist.";
-                    } else {
-                        return "Challenge exists but is not currently open.";
+
+    private String conductChallenge(List<Map<String, Object>> questions, long durationInSeconds, int attemptNo) throws IOException, SQLException {
+        int totalScore = 0;
+        int totalPossibleScore = 0;
+        int totalQuestions = questions.size();
+        long startTime = System.currentTimeMillis();
+        long endTime = startTime + (durationInSeconds * 1000);
+        StringBuilder report = new StringBuilder();
+        List<Map<String, Object>> answeredQuestions = new ArrayList<>();
+
+        for (int i = 0; i < questions.size(); i++) {
+            Map<String, Object> question = questions.get(i);
+            long currentTime = System.currentTimeMillis();
+            
+            if (currentTime >= endTime) {
+                out.println("Time's up!");
+                break;
+            }
+
+            long remainingTime = (endTime - currentTime) / 1000;
+            int remainingQuestions = totalQuestions - i;
+
+            out.println("Remaining questions: " + remainingQuestions + ", Remaining time: " + remainingTime + " seconds");
+            out.println("Question: " + question.get("question"));
+            out.flush();
+
+            String userAnswer = in.readLine();
+            
+            int mark = 1;
+            if (question.containsKey("mark")) {
+                Object markObj = question.get("mark");
+                if (markObj instanceof Integer) {
+                    mark = (Integer) markObj;
+                } else if (markObj instanceof String) {
+                    try {
+                        mark = Integer.parseInt((String) markObj);
+                    } catch (NumberFormatException e) {
+                        System.err.println("Invalid mark format for question " + (i+1) + ": " + markObj);
                     }
                 }
             }
-           
-            String challengeName = rs.getString("challengeName");
-            String attemptDurationStr = rs.getString("Duration");
-            LocalTime Duration = LocalTime.parse(attemptDurationStr, DateTimeFormatter.ofPattern("HH:mm:ss"));
-            long durationInSeconds = Duration.toSecondOfDay();
             
-            if (hasExceededAttempts(challengeNo)) {
-                return "You have already attempted this challenge 3 times.";
-            }
-            
-            List<Map<String, Object>> questions = fetchRandomQuestions(challengeNo);
-            if (questions.isEmpty()) {
-                return "No questions available for this challenge.";
-            }
-            
-            out.println("CHALLENGE_READY");
-            out.flush();
-            
-            String startResponse = in.readLine();
-            if (!startResponse.equalsIgnoreCase("START")) {
-                return "Challenge cancelled.";
-            }
-            
-            int attemptID = storeAttempt(challengeNo);
-            return conductChallenge(questions, durationInSeconds, attemptID);
-        }
-    } catch (SQLException | IOException e) {
-        System.err.println("Error during challenge attempt: " + e.getMessage());
-        e.printStackTrace();
-        return "Error during challenge attempt: " + e.getMessage();
-    }
-}
+            totalPossibleScore += mark;
+            int score = scoreAnswer(userAnswer, (String) question.get("answer"), mark);
+            totalScore += score;
 
-    private String conductChallenge(List<Map<String, Object>> questions, long durationInSeconds, int attemptID) throws IOException, SQLException {
-    int totalScore = 0;
-    int totalQuestions = questions.size();
-    long startTime = System.currentTimeMillis();
-    long endTime = startTime + (durationInSeconds * 1000);
-    StringBuilder report = new StringBuilder();
+            long questionTime = (System.currentTimeMillis() - currentTime) / 1000;
+            report.append("Question ").append(i + 1).append(": Score = ").append(score)
+                  .append("/").append(mark).append(", Time taken = ").append(questionTime).append(" seconds\n");
 
-    for (int i = 0; i < questions.size(); i++) {
-        Map<String, Object> question = questions.get(i);
-        long currentTime = System.currentTimeMillis();
-        
-        if (currentTime >= endTime) {
-            out.println("Time's up!");
-            break;
+            Map<String, Object> answeredQuestion = new HashMap<>(question);
+            answeredQuestion.put("userAnswer", userAnswer);
+            answeredQuestion.put("score", score);
+            answeredQuestions.add(answeredQuestion);
         }
 
-        long remainingTime = (endTime - currentTime) / 1000; // remaining time in seconds
-        int remainingQuestions = totalQuestions - i;
+        long totalTime = (System.currentTimeMillis() - startTime) / 1000;
+        report.append("Total Score: ").append(totalScore).append("/").append(totalPossibleScore).append("\n");
+        report.append("Total Time: ").append(totalTime).append(" seconds");
 
-        out.println("Remaining questions: " + remainingQuestions + ", Remaining time: " + remainingTime + " seconds");
-        out.println("Question: " + question.get("question"));
+        out.println("END_OF_CHALLENGE");
+        out.println(report.toString());
         out.flush();
 
-        String userAnswer = in.readLine();
-        int score = scoreAnswer(userAnswer, (String) question.get("answer"), (Integer) question.get("mark"));
-        totalScore += score;
+        double percentageMark = totalPossibleScore > 0 ? (double) totalScore / totalPossibleScore * 100 : 0;
 
-        long questionTime = (System.currentTimeMillis() - currentTime) / 1000; // time taken for this question in seconds
-        report.append("Question ").append(i + 1).append(": Score = ").append(score)
-              .append(", Time taken = ").append(questionTime).append(" seconds\n");
+        storeAttemptResult(attemptNo, totalScore, totalTime, percentageMark);
+
+        try {
+            byte[] pdfBytes = generatePDF(answeredQuestions, totalScore, totalPossibleScore, totalTime);
+            sendEmailWithPDF(pdfBytes);
+        } catch (Exception e) {
+            System.err.println("Error generating PDF or sending email: " + e.getMessage());
+            e.printStackTrace();
+        }
+
+        return report.toString();
     }
 
-    long totalTime = (System.currentTimeMillis() - startTime) / 1000; // total time in seconds
-    report.append("Total Score: ").append(totalScore).append("\n");
-    report.append("Total Time: ").append(totalTime).append(" seconds");
+    // private byte[] generatePDF(List<Map<String, Object>> answeredQuestions, int totalScore, int totalPossibleScore, long totalTime) throws DocumentException, IOException {
+    //     ByteArrayOutputStream baos = new ByteArrayOutputStream();
+    //     Document document = new Document();
+    //     PdfWriter.getInstance(document, baos);
 
-    // Store the attempt results in the database
-    storeAttemptResults(attemptID, totalScore, totalTime);
+    //     document.open();
+    //     document.add(new Paragraph("Challenge Results"));
+    //     document.add(new Paragraph("Total Score: " + totalScore + "/" + totalPossibleScore));
+    //     document.add(new Paragraph("Total Time: " + totalTime + " seconds"));
+    //     document.add(new Paragraph("\n"));
 
-    return "Challenge completed.\n" + report.toString();
-}
+    //     for (int i = 0; i < answeredQuestions.size(); i++) {
+    //         Map<String, Object> question = answeredQuestions.get(i);
+    //         document.add(new Paragraph("Question " + (i + 1) + ": " + question.get("question")));
+    //         document.add(new Paragraph("Your Answer: " + question.get("userAnswer")));
+    //         document.add(new Paragraph("Correct Answer: " + question.get("answer")));
+    //         document.add(new Paragraph("Score: " + question.get("score")));
+    //         document.add(new Paragraph("\n"));
+    //     }
 
+    //     document.close();
+    //     return baos.toByteArray();
+    // }
+
+    private void sendEmailWithPDF(byte[] pdfBytes) throws MessagingException, SQLException {
+        String host = "smtp.gmail.com";
+        String from = "mathchallengesystem@gmail.com";
+        String password = "aibj jdgj fvpl cfwb";
+
+        Properties properties = new Properties();
+        properties.put("mail.smtp.host", host);
+        properties.put("mail.smtp.port", "587");
+        properties.put("mail.smtp.auth", "true");
+        properties.put("mail.smtp.starttls.enable", "true");
+
+        Session session = Session.getInstance(properties, new javax.mail.Authenticator() {
+            protected PasswordAuthentication getPasswordAuthentication() {
+                return new PasswordAuthentication(from, password);
+            }
+        });
+
+        try {
+            Message message = new MimeMessage(session);
+            message.setFrom(new InternetAddress(from));
+            message.setRecipients(Message.RecipientType.TO, InternetAddress.parse(getParticipantEmail()));
+            message.setSubject("Your Challenge Results");
+
+            Multipart multipart = new MimeMultipart();
+
+            MimeBodyPart textPart = new MimeBodyPart();
+            textPart.setText("Please find attached your challenge results.");
+
+            MimeBodyPart pdfPart = new MimeBodyPart();
+            DataSource dataSource = new ByteArrayDataSource(pdfBytes, "application/pdf");
+            pdfPart.setDataHandler(new DataHandler(dataSource));
+            pdfPart.setFileName("challenge_results.pdf");
+
+            multipart.addBodyPart(textPart);
+            multipart.addBodyPart(pdfPart);
+
+            message.setContent(multipart);
+
+            Transport.send(message);
+            System.out.println("Email sent successfully with PDF attachment.");
+        } catch (MessagingException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private String getParticipantEmail() throws SQLException {
+        String sql = "SELECT email FROM Participants WHERE id = ?";
+        try (PreparedStatement pstmt = con.prepareStatement(sql)) {
+            pstmt.setInt(1, participantID);
+            ResultSet rs = pstmt.executeQuery();
+            if (rs.next()) {
+                return rs.getString("email");
+            } else {
+                throw new SQLException("Participant email not found");
+            }
+        }
+    }
     private int scoreAnswer(String userAnswer, String correctAnswer, int maxMarks) {
     if (userAnswer.equals("-") || userAnswer.equals("")) {
         return 0;
@@ -507,60 +627,69 @@ public class ClientHandler implements Runnable {
     }
 }
 
-    private void storeAttemptResults(int attemptID, int totalScore, long totalTime) throws SQLException {
-    String sql = "UPDATE Attempts SET score = ?, timeTaken = ? WHERE attemptID = ?";
+private void storeAttemptResult(int id, int totalScore, long totalTimeSeconds, double percentageMark) throws SQLException {
+    String sql = "UPDATE Attempts SET score = ?, startTime = ?, endTime = CURRENT_TIMESTAMP, percentageMark = ? WHERE id = ?";
     try (PreparedStatement pstmt = con.prepareStatement(sql)) {
         pstmt.setInt(1, totalScore);
-        pstmt.setLong(2, totalTime);
-        pstmt.setInt(3, attemptID);
+        
+        // Convert totalTimeSeconds to TIME format (HH:MM:SS)
+        int hours = (int) (totalTimeSeconds / 3600);
+        int minutes = (int) ((totalTimeSeconds % 3600) / 60);
+        int seconds = (int) (totalTimeSeconds % 60);
+        String timeString = String.format("%02d:%02d:%02d", hours, minutes, seconds);
+        pstmt.setString(2, timeString);
+        
+        pstmt.setDouble(3, percentageMark);
+        pstmt.setInt(4, id);
         pstmt.executeUpdate();
     }
 }
 
-    private List<Map<String, Object>> fetchRandomQuestions(int challengeNo) throws SQLException {
-    String questionSql = "SELECT q.questionId, q.question, a.answer, a.mark " +
-                         "FROM questions q " +
-                         "JOIN answers a ON q.questionId = a.questionId " +
-                         "WHERE q.challengeNo = ? " +
-                         "ORDER BY RAND() " +
-                         "LIMIT 10";
-    
+private List<Map<String, Object>> fetchRandomQuestions(int challengeNo) throws SQLException {
     List<Map<String, Object>> questions = new ArrayList<>();
-    
-    try (PreparedStatement questionStmt = con.prepareStatement(questionSql)) {
-        questionStmt.setInt(1, challengeNo);
-        try (ResultSet questionRs = questionStmt.executeQuery()) {
-            while (questionRs.next()) {
+    String sql = "SELECT questionid, question FROM Questions WHERE ChallengeNo = ? ORDER BY RAND() LIMIT 10";
+    try (PreparedStatement pstmt = con.prepareStatement(sql)) {
+        pstmt.setInt(1, challengeNo);
+        try (ResultSet rs = pstmt.executeQuery()) {
+            while (rs.next()) {
                 Map<String, Object> question = new HashMap<>();
-                question.put("questionId", questionRs.getString("questionId"));
-                question.put("question", questionRs.getString("question"));
-                question.put("answer", questionRs.getString("answer"));
-                question.put("mark", questionRs.getInt("mark"));
+                question.put("questionId", rs.getString("questionid"));
+                question.put("question", rs.getString("question"));
+                // question.put("answer", rs.getString("Answer"));
+                // question.put("mark", rs.getInt("Mark"));
                 questions.add(question);
             }
         }
     }
-    
     return questions;
 }
 
-    private int storeAttempt(int challengeNo) throws SQLException {
-        String insertAttemptSql = "INSERT INTO Attempt (startTime, participantID, challengeNo, endTime, score, percentageMark) VALUES (?, ?, ?, NULL, NULL, NULL)";
-        try (PreparedStatement pstmt = con.prepareStatement(insertAttemptSql, Statement.RETURN_GENERATED_KEYS)) {
-            pstmt.setTimestamp(1, new Timestamp(System.currentTimeMillis()));
-            pstmt.setInt(2, participantID);
-            pstmt.setInt(3, challengeNo);
-            pstmt.executeUpdate();
-
-            try (ResultSet generatedKeys = pstmt.getGeneratedKeys()) {
-                if (generatedKeys.next()) {
-                    return generatedKeys.getInt(1);
-                } else {
-                    throw new SQLException("Creating attempt failed, no ID obtained.");
-                }
+private int storeAttempt(int challengeNo) throws SQLException {
+    String sql = "INSERT INTO Attempts (challengeNo, participantID, startTime, endTime, score, percentageMark) VALUES (?, ?, ?, ?, 0, 0)";
+    try (PreparedStatement pstmt = con.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
+        pstmt.setInt(1, challengeNo);
+        pstmt.setInt(2, participantID); // Assuming you have a participantID variable
+        
+        Timestamp startTime = new Timestamp(System.currentTimeMillis());
+        pstmt.setTimestamp(3, startTime);
+        
+        // Set endTime to a future time, we'll update it later when the attempt is finished
+        Timestamp endTime = new Timestamp(startTime.getTime() + (30 * 60 * 1000)); // 30 minutes from now
+        pstmt.setTimestamp(4, endTime);
+        
+        // We've added score = 0 and percentageMark = 0 directly in the SQL statement
+        
+        pstmt.executeUpdate();
+        
+        try (ResultSet generatedKeys = pstmt.getGeneratedKeys()) {
+            if (generatedKeys.next()) {
+                return generatedKeys.getInt(1);
+            } else {
+                throw new SQLException("Creating attempt failed, no ID obtained.");
             }
         }
     }
+}
 
     //checking if the participant has exceeded 3 attempts
     private boolean hasExceededAttempts(int challengeNo) throws SQLException {

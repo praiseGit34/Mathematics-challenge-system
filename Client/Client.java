@@ -198,58 +198,42 @@ private String sendMessage(String message) throws IOException {
         }
     }
 
-    private void attemptChallenge(String challengeNumber) {
+    private void attemptChallenge(String challengeNumber) throws IOException {
         try {
-            // Send the attempt challenge request
-            out.println("ATTEMPT_CHALLENGE " + challengeNumber);
-            out.flush();
+            String response = sendMessage("ATTEMPT_CHALLENGE " + challengeNumber);
+            System.out.println(response);
     
-            // Read the server's response
-            String response = in.readLine();
-            System.out.println("Server response: " + response);
+            if (response.equals("CHALLENGE_READY")) {
+                System.out.println("Press Enter to start the challenge...");
+                scanner.nextLine(); // Wait for user to press Enter
+                out.println("START");
+                out.flush();
     
-            if (response.contains("Challenge is not open or does not exist")) {
-                System.out.println("Challenge is not available. Returning to main menu.");
-                return;
-            }
+                while (true) {
+                    String line = in.readLine();
+                    if (line == null || line.equals("END_OF_CHALLENGE")) {
+                        break;
+                    }
+                    System.out.println(line);
     
-            if (!response.equals("CHALLENGE_READY")) {
-                System.out.println("Unexpected response from server. Aborting challenge attempt.");
-                return;
-            }
+                    if (line.startsWith("Question:")) {
+                        System.out.print("Your answer: ");
+                        String answer = scanner.nextLine();
+                        out.println(answer);
+                        out.flush();
+                    }
     
-            System.out.println("Challenge is ready. Press Enter to start...");
-            scanner.nextLine(); // Wait for user to press Enter
-    
-            // Send start signal to server
-            out.println("START");
-            out.flush();
-    
-            // Process challenge questions
-            while (true) {
-                String line = in.readLine();
-                if (line == null || line.equals("END_OF_CHALLENGE")) {
-                    break;
-                }
-                System.out.println(line);
-    
-                if (line.startsWith("Enter your answer")) {
-                    System.out.print("Your answer: ");
-                    String answer = scanner.nextLine();
-                    out.println(answer);
-                    out.flush();
+                    if (line.equals("Time's up!")) {
+                        System.out.println("Challenge ended due to time limit.");
+                        break;
+                    }
                 }
     
-                if (line.equals("oh sorry! time is done")) {
-                    System.out.println("Challenge ended due to time limit.");
-                    break;
-                }
+                String finalResult = in.readLine();
+                System.out.println(finalResult);
+            } else {
+                System.out.println("Failed to start challenge: " + response);
             }
-    
-            // Read and display final result
-            String finalResult = in.readLine();
-            System.out.println(finalResult);
-    
         } catch (IOException e) {
             System.err.println("Error during challenge attempt: " + e.getMessage());
             e.printStackTrace();
