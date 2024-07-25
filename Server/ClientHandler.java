@@ -114,8 +114,8 @@ public class ClientHandler implements Runnable {
         try {
             schoolRegNo = Integer.parseInt(parts[6]);
         } catch (NumberFormatException e) {//chaecks the whether the reg no exists in the database and is an integer
-            System.out.println("Invalid school registration number: " + parts[6]);
-            return "Invalid school registration number";
+           // System.out.println();
+            return "Invalid school registration number: " + parts[6] ;
         }
         String imagePath = parts[7];
         System.out.println("Parsed registration data:");
@@ -148,7 +148,7 @@ public class ClientHandler implements Runnable {
             pstmt.setDate(8, sqlDate);
             int affectedRows = pstmt.executeUpdate();
     if (affectedRows > 0) {
-    System.out.println("User registered successfully");
+    out.println("User registered successfully");
     sendParticipantEmail(email, username);
     try (PreparedStatement psSelect = con.prepareStatement("SELECT emailAddress FROM schools WHERE schoolRegNo = ?")) {
         psSelect.setInt(1, schoolRegNo);
@@ -162,12 +162,14 @@ public class ClientHandler implements Runnable {
                 + "School Reg No: " + schoolRegNo;
                  sendEmail(emailAddress, participantInfo);
             } else {
-                System.out.println("No email address found for the given school registration number.");
+                out.println("No email address found for the given school registration number.");
             }
         }
     } catch (SQLException e) {
         System.out.println("Error retrieving school email: " + e.getMessage());
     }
+    System.out.println("\n");
+    System.out.println("User registered successfully. Your password is:"+ password);
     return "User registered successfully. Your password is: " + password;
     } else {
     System.out.println("Failed to register user");
@@ -313,7 +315,8 @@ public class ClientHandler implements Runnable {
             if (rs.next()) {
                 participantID = rs.getInt("id");
                 isSchoolRepresentative = false;
-                return "Login successful for user: " + username;
+                //out.println("Thank you for logging in to the mathematics challenge system");
+                return "Thank you for logging in to the mathematics challenge system";
             } else {
                 // Check if it's a school representative
                 query = "SELECT * FROM Schools WHERE emailAddress = ? AND password = ?";
@@ -324,7 +327,8 @@ public class ClientHandler implements Runnable {
                 if (rs.next()) {
                     school_registration_number = rs.getInt("schoolRegNo");
                     isSchoolRepresentative = true;
-                    return "Login successful for school representative: " + username;
+                    
+                    return "Thank you for logging in to the mathematics challenge system";
                 } else {
                     System.out.println("Debug: Invalid login attempt for: " + username);
                     return "Invalid username or password.";
@@ -781,7 +785,7 @@ private int storeAttempt(int challengeNo) throws SQLException {
 message.setText(emailBody);
        
         Transport.send(message);
-        System.out.println("Email sent successfully to " + emailAddress);
+        out.println("Email sent successfully to " + emailAddress);
     } catch (MessagingException e) {
         throw new RuntimeException(e);
     }

@@ -185,7 +185,7 @@ private String sendMessage(String message) throws IOException {
         String message = String.join(" ", args);
         System.out.println("Sending registration message: " + message);
         String response = sendMessage("REGISTER " + message);
-        System.out.println("Server response: " + response);
+        //System.out.println("Server response: " + response);
     }
 
     private void viewChallenges() throws IOException {
